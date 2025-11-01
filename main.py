@@ -372,7 +372,7 @@ class WS:
 
 # === MAIN ===
 if __name__ == "__main__":
-    print("🚀 Start BBOT 3.22 ...")
+    print("🚀 Start BBOT 3.222 ...")
     db = DB()
     exe = Executor(db)
     strat = Strategy(exe)
