@@ -14,15 +14,15 @@ CFG = {
     "TELEGRAM_BOT_TOKEN": "7971462955:AAHIqNKqJR38gr5ieC7_n5wafDD5bD-jRHE",
     "ALLOWED_CHAT_IDS": ["7684314138"],
     "WINDOW_SECONDS": 5,               # okno czasowe do analizy (s)
-    "PCT_THRESHOLD": 10.0,             # spadek procentowy do triggera
+    "PCT_THRESHOLD": 20.0,             # spadek procentowy do triggera
     "BUY_ALLOCATION_PERCENT": 1.0,    # jeśli mamy quote, kupujemy tę część (5%): zwykła ścieżka
-    "CONVERT_FROM_USDC_PERCENT": 0.10, # jeśli trzeba konwertować USDC -> quote, ile % USDC konwertować (np. 0.1 = 10%)
-    "TP_PERCENT": 5.0,                 # take profit %
+    "CONVERT_FROM_USDC_PERCENT": 0.50, # jeśli trzeba konwertować USDC -> quote, ile % USDC konwertować (np. 0.1 = 10%)
+    "TP_PERCENT": 10.0,                 # take profit %
     "MAX_CONCURRENT_TRADES": 5,
     "PAPER_TRADING": False,
     "USERDATA_STREAM": True,
     "MIN_NOTIONAL_DEFAULT": 5.0,       # wartość minimalna jeśli brak info z API
-    "TRADE_COOLDOWN_SECONDS": 10       # cooldown na symbol po wykonanym trade
+    "TRADE_COOLDOWN_SECONDS": 90       # cooldown na symbol po wykonanym trade
 }
 
 # === POMOCNICZE ===
