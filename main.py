@@ -155,12 +155,12 @@ class Executor:
             print("Balance error:", e)
             return 0.0
 
-        def convert_usdc_to_target(self, target_symbol):
+  def convert_usdc_to_target(self, target_symbol):
     """
-    🔄 Konwertuje część USDC na walutę docelową (np. USDT, BNB, BTC itd.),
-    jeśli bot potrzebuje kupić daną parę, a środków w tej walucie brakuje.
+    🔄 Konwertuje część USDC na docelową walutę (np. USDT, BNB, BTC itd.), jeśli jej brakuje.
     Ilość konwersji ustalana przez CONVERT_FROM_USDC_PERCENT.
     """
+    pass  # <- tymczasowo, żeby nie było błędu
     try:
         usdc_balance = self._get_balance("USDC")
         if usdc_balance <= 0:
