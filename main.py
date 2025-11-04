@@ -380,7 +380,7 @@ class WS:
 
 # === MAIN ===
 if __name__ == "__main__":
-    print("🚀 Start BBOT 2.4")
+    print("🚀 Start BBOT 2.5")
     db = DB(); exe = Executor(db); strat = Strategy(exe)
     ws = WS(strat); tg = TelegramBot(db, exe)
     threading.Thread(target=ws.run, daemon=True).start()
