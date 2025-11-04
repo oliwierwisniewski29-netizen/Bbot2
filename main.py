@@ -158,41 +158,54 @@ class Executor:
 
     def enqueue(self, sig): self.q.put(sig)
 
-    def convert_usdc_to_target(self, target_symbol):
+    def convert_from_usdc(self, target_symbol):
         """
-        🔄 Konwertuje część USDC na docelową walutę (np. USDT, BNB, BTC itd.), jeśli jej brakuje.
-        Ilość konwersji ustalana przez CONVERT_FROM_USDC_PERCENT.
+        🔄 Konwertuje część USDC na docelową walutę (USDT, BTC, ETH itd.),
+        jeśli brakuje jej w portfelu. Ilość określa CONVERT_FROM_USDC_PERCENT.
         """
         try:
             usdc_balance = self._get_balance("USDC")
             if usdc_balance <= 0:
                 send_telegram("❌ Brak środków USDC do konwersji.")
-                return 0.0
+                return
 
             convert_amount = usdc_balance * CFG["CONVERT_FROM_USDC_PERCENT"]
             if convert_amount <= 0:
-                send_telegram(f"⚠️ Zbyt mała kwota do konwersji: {convert_amount:.6f} USDC")
-                return 0.0
+                send_telegram(f"⚠️ Zbyt mała kwota do konwersji: {convert_amount:.2f} USDC")
+                return
 
-            pair = f"{target_symbol}USDC"  # np. USDTUSDC lub BNBUSDC
-            send_telegram(f"🔄 Konwertuję {convert_amount:.6f} USDC → {target_symbol} (para {pair})...")
+            # Rozpoznaj docelową walutę
+            quote = next((q for q in [
+                "USDC","USDT","BNB","BTC","TRY","ETH",
+                "EUR","XRP","DOGE","TRX","BRL","JPY","PLN",
+                "FDUSD","TUSD","ARS","NGN","UAH","ZAR","AUD","CAD"
+            ] if target_symbol.endswith(q)), None)
 
-            if self.paper:
-                # symulacja: przyjmijmy przybliżony kurs 1:1 dla demonstracji -> zwróć amount jako qty (nie realne)
-                simulated_qty = round(convert_amount / 1.0, 8)
-                send_telegram(f"[PAPER] Symulacja: {convert_amount:.6f} USDC -> {simulated_qty} {target_symbol}")
-                return simulated_qty
+            if not quote:
+                send_telegram(f"❓ Nie rozpoznano quote dla {target_symbol}")
+                return
 
-            # live: place market buy quoteOrderQty=convert_amount
-            order = self.client.order_market_buy(symbol=pair, quoteOrderQty=str(round(convert_amount, 6)))
-            filled_qty = safe_float(order.get("executedQty") or sum(safe_float(f.get("qty",0)) for f in order.get("fills", [])))
-            avg_price = safe_float(order["fills"][0]["price"]) if order.get("fills") else 0.0
-            send_telegram(f"✅ Przekonwertowano {convert_amount:.6f} USDC na {filled_qty:.8f} {target_symbol} @ {avg_price}")
-            return filled_qty
+            if quote == "USDC":
+                send_telegram("ℹ️ Para już w USDC — brak potrzeby konwersji.")
+                return
+
+            # Tworzymy nazwę pary np. USDTUSDC, BTCUSDC itd.
+            convert_pair = f"{quote}USDC"
+
+            send_telegram(f"🔄 Konwertuję {convert_amount:.2f} USDC → {quote} ({convert_pair})...")
+            if not self.paper:
+                order = self.client.order_market_buy(
+                    symbol=convert_pair,
+                    quoteOrderQty=str(round(convert_amount, 2))
+                )
+                filled_qty = safe_float(order.get("executedQty"))
+                avg_price = safe_float(order["fills"][0]["price"]) if order.get("fills") else 0
+                send_telegram(f"✅ Przekonwertowano {convert_amount:.2f} USDC na {filled_qty:.5f} {quote} @ {avg_price:.2f}")
+            else:
+                send_telegram(f"[PAPER] Symulacja konwersji {convert_amount:.2f} USDC → {quote}")
+
         except Exception as e:
-            send_telegram(f"❌ Błąd konwersji USDC→{target_symbol}: {e}")
-            print("Conversion error:", e)
-            return 0.0
+            send_telegram(f"❌ Błąd konwersji USDC→{quote}: {e}")
 
     def sell_all_position(self, symbol):
         """
