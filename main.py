@@ -206,7 +206,9 @@ class Executor:
                 return
 
             # rozpoznaj quote i base
-            quotes = ["USDC","USDT","BTC","BNB","TRY","ETH","BUSD"]
+            quotes = [ "USDC","USDT","BNB","BTC","TRY","ETH",
+                       "EUR","XRP","DOGE","TRX","BRL","JPY","PLN",
+                       "FDUSD","TUSD","ARS","NGN","UAH","ZAR","AUD","CAD"]
             quote = next((q for q in quotes if symbol.endswith(q)), None)
             if quote:
                 base = symbol[:-len(quote)]
