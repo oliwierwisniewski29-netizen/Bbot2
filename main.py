@@ -156,32 +156,53 @@ class Executor:
             return 0.0
 
     def convert_usdc_to_bnb(self):
-        """Konwertuje część USDC na BNB wg CONVERT_FROM_USDC_PERCENT"""
+            def convert_usdc_if_needed(self, target_coin):
+        """
+        🔄 Konwertuje część USDC na docelową walutę (np. USDT, BNB, BTC itd.), jeśli jej brakuje.
+        Ilość konwersji ustalana przez CONVERT_FROM_USDC_PERCENT.
+        """
         try:
+            # Nie konwertujemy na USDC (bez sensu)
+            if target_coin == "USDC":
+                return
+
             usdc_balance = self._get_balance("USDC")
             if usdc_balance <= 0:
                 send_telegram("❌ Brak środków USDC do konwersji.")
                 return
-            convert_amount = usdc_balance * CFG["CONVERT_FROM_USDC_PERCENT"]
+
+            # Sprawdź, czy mamy wystarczająco danej waluty
+            target_balance = self._get_balance(target_coin)
+            min_notional = CFG["MIN_NOTIONALS"].get(target_coin, CFG["MIN_NOTIONAL_DEFAULT"])
+
+            # Jeśli waluty jest wystarczająco dużo — nic nie rób
+            if target_balance * self._get_price(f"{target_coin}USDC") > min_notional:
+                return
+
+            convert_percent = CFG.get("CONVERT_FROM_USDC_PERCENT", 0.1)  # np. 10%
+            convert_amount = usdc_balance * convert_percent
+
             if convert_amount < 1:
                 send_telegram(f"⚠️ Zbyt mała kwota do konwersji: {convert_amount:.2f} USDC")
                 return
 
-            send_telegram(f"🔄 Konwertuję {convert_amount:.2f} USDC → BNB...")
+            send_telegram(f"🔄 Konwertuję {convert_amount:.2f} USDC → {target_coin} (bo wykryto sygnał na {target_coin})")
+
             if not self.paper:
+                symbol = f"{target_coin}USDC"
                 order = self.client.order_market_buy(
-                    symbol="BNBUSDC",
+                    symbol=symbol,
                     quoteOrderQty=str(round(convert_amount, 2))
                 )
                 filled_qty = safe_float(order.get("executedQty"))
                 avg_price = safe_float(order["fills"][0]["price"]) if order.get("fills") else 0
-                send_telegram(f"✅ Przekonwertowano {convert_amount:.2f} USDC na {filled_qty:.5f} BNB @ {avg_price:.2f}")
+                send_telegram(f"✅ Przekonwertowano {convert_amount:.2f} USDC na {filled_qty:.5f} {target_coin} @ {avg_price:.2f}")
             else:
-                send_telegram(f"[PAPER] Symulacja konwersji {convert_amount:.2f} USDC → BNB")
-        except Exception as e:
-            send_telegram(f"❌ Błąd konwersji USDC→BNB: {e}")
+                send_telegram(f"[PAPER] Symulacja: {convert_amount:.2f} USDC → {target_coin}")
 
-    def sell_all_position(self, symbol):
+        except Exception as e:
+            send_telegram(f"❌ Błąd konwersji USDC→{target_coin}: {e}")
+
         """Ręczna sprzedaż całej pozycji"""
         try:
             if not self.db.has_open_position(symbol):
