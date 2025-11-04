@@ -155,12 +155,9 @@ class Executor:
             print("Balance error:", e)
             return 0.0
 
-    def convert_usdc_to_bnb(self):
-            def convert_usdc_if_needed(self, target_coin):
-        """
-        🔄 Konwertuje część USDC na docelową walutę (np. USDT, BNB, BTC itd.), jeśli jej brakuje.
-        Ilość konwersji ustalana przez CONVERT_FROM_USDC_PERCENT.
-        """
+        def convert_usdc_if_needed(self, target_coin):
+        """🔄 Konwertuje część USDC na docelową walutę (np. USDT, BNB, BTC itd.), jeśli jej brakuje.
+        Ilość konwersji ustalana przez CONVERT_FROM_USDC_PERCENT."""
         try:
             # Nie konwertujemy na USDC (bez sensu)
             if target_coin == "USDC":
