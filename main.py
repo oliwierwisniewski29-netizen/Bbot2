@@ -1,4 +1,4 @@
-# === BBOT 2.3 - auto USDC→BNB + manual sellall ===
+# === BBOT 2.3 - auto USDC→target + manual sellall (poprawione) ===
 import os, json, threading, time, asyncio, requests, sqlite3, math
 from collections import defaultdict, deque
 from queue import Queue
@@ -19,7 +19,7 @@ CFG = {
     "WINDOW_SECONDS": 5,
     "PCT_THRESHOLD": 20.0,
     "BUY_ALLOCATION_PERCENT": 1.0,      # ile % salda quote ma iść na zakup
-    "CONVERT_FROM_USDC_PERCENT": 0.50,   # ile % USDC konwertować na BNB
+    "CONVERT_FROM_USDC_PERCENT": 0.50,   # ile % USDC konwertować
     "TP_PERCENT": 7.0,
     "MAX_CONCURRENT_TRADES": 5,
     "PAPER_TRADING": False,
@@ -53,6 +53,7 @@ def floor_to_step(qty, step):
     try:
         if step <= 0: return qty
         mult = math.floor(qty / step)
+        # ograniczamy do 8 miejsc po przecinku, bo Binance często ma taką precyzję wystarczającą
         return round(mult * step, 8)
     except: return qty
 
@@ -137,9 +138,9 @@ class Executor:
                 step_size = 0.000001
                 for f in s.get("filters", []):
                     if f["filterType"] == "MIN_NOTIONAL":
-                        min_notional = safe_float(f["minNotional"])
+                        min_notional = safe_float(f.get("minNotional", min_notional))
                     if f["filterType"] == "LOT_SIZE":
-                        step_size = safe_float(f["stepSize"])
+                        step_size = safe_float(f.get("stepSize", step_size))
                 self.symbol_filters[symbol] = {"min_notional": min_notional, "step_size": step_size}
             print(f"✅ Załadowano {len(self.symbol_filters)} filtrów")
         except Exception as e:
@@ -155,111 +156,101 @@ class Executor:
             print("Balance error:", e)
             return 0.0
 
-def _convert_usdc(self, target, convert_percent):
-    """
-    Skonwertuj część USDC -> target.
+    def enqueue(self, sig): self.q.put(sig)
 
-    Args:
-        target (str): Symbol waluty docelowej (np. "TRY").
-        convert_percent (float): Ułamek (0..1) całego balansu USDC do konwersji.
-
-    Returns:
-        tuple: (ilość target [base], ilość użytego USDC),
-               lub (0.0, 0.0) w przypadku błędu.
-    """
-    usdc_bal = self._get_balance("USDC")
-    if usdc_bal <= 0:
-        return 0.0, 0.0
-
-    amount_usdc = usdc_bal * float(convert_percent)
-    if amount_usdc <= 0:
-        return 0.0, 0.0
-
-    pair = f"{target}USDC"  # np. TRYUSDC -> kupujemy TRY za USDC
-
-    # Retry wrapper na zamówienie
-    attempts = CFG["API_RETRY_ATTEMPTS"]
-    backoff = CFG["API_RETRY_BACKOFF"]
-    last_exc = None
-
-    for i in range(1, attempts + 1):
+    def convert_usdc_to_target(self, target_symbol):
+        """
+        🔄 Konwertuje część USDC na docelową walutę (np. USDT, BNB, BTC itd.), jeśli jej brakuje.
+        Ilość konwersji ustalana przez CONVERT_FROM_USDC_PERCENT.
+        """
         try:
-            order = self.client.order_market_buy(
-                symbol=pair,
-                quoteOrderQty=str(round(amount_usdc, 6))
-            )
+            usdc_balance = self._get_balance("USDC")
+            if usdc_balance <= 0:
+                send_telegram("❌ Brak środków USDC do konwersji.")
+                return 0.0
 
-            # Policz ile base dostaliśmy
-            executed_qty = safe_float(
-                order.get('executedQty')
-                or sum(safe_float(f.get('qty', 0)) for f in order.get('fills', []))
-            )
+            convert_amount = usdc_balance * CFG["CONVERT_FROM_USDC_PERCENT"]
+            if convert_amount <= 0:
+                send_telegram(f"⚠️ Zbyt mała kwota do konwersji: {convert_amount:.6f} USDC")
+                return 0.0
 
-            send_telegram(
-                f"💱 Skonwertowano {amount_usdc:.6f} USDC → "
-                f"{executed_qty:.8f} {target} (para {pair})"
-            )
+            pair = f"{target_symbol}USDC"  # np. USDTUSDC lub BNBUSDC
+            send_telegram(f"🔄 Konwertuję {convert_amount:.6f} USDC → {target_symbol} (para {pair})...")
 
-            return executed_qty, amount_usdc
+            if self.paper:
+                # symulacja: przyjmijmy przybliżony kurs 1:1 dla demonstracji -> zwróć amount jako qty (nie realne)
+                simulated_qty = round(convert_amount / 1.0, 8)
+                send_telegram(f"[PAPER] Symulacja: {convert_amount:.6f} USDC -> {simulated_qty} {target_symbol}")
+                return simulated_qty
 
+            # live: place market buy quoteOrderQty=convert_amount
+            order = self.client.order_market_buy(symbol=pair, quoteOrderQty=str(round(convert_amount, 6)))
+            filled_qty = safe_float(order.get("executedQty") or sum(safe_float(f.get("qty",0)) for f in order.get("fills", [])))
+            avg_price = safe_float(order["fills"][0]["price"]) if order.get("fills") else 0.0
+            send_telegram(f"✅ Przekonwertowano {convert_amount:.6f} USDC na {filled_qty:.8f} {target_symbol} @ {avg_price}")
+            return filled_qty
         except Exception as e:
-            last_exc = e
-            wait = backoff * (2 ** (i - 1))
-            print(
-                f"[convert retry] error converting {pair}: {e} — "
-                f"retry {i}/{attempts} after {wait:.1f}s"
-            )
-            time.sleep(wait)
+            send_telegram(f"❌ Błąd konwersji USDC→{target_symbol}: {e}")
+            print("Conversion error:", e)
+            return 0.0
 
-    print("Conversion error (final):", last_exc)
-    return 0.0, 0.0
-
-
-def enqueue(self, sig):
-    """Dodaj sygnał do kolejki."""
-    self.q.put(sig)
-
-
-def _buy(self, symbol, price):
-    """
-    Kup po cenie rynkowej.
-
-    Zabezpieczenia:
-    - cooldown / lock na symbol
-    - używa symbol_filters (minNotional, step)
-    - konwersja USDC -> quote i użycie CAŁEJ przekonwertowanej kwoty do zakupu (jeśli brak quote)
-    - retry + logi błędów
-    """
-    pass  # Implementacja właściwa tutaj
-
-        """Ręczna sprzedaż całej pozycji"""
+    def sell_all_position(self, symbol):
+        """
+        Ręczna sprzedaż całej pozycji. Symbol to rynek (np. MMTBNB lub XRPUSDT).
+        Funkcja wyznacza base (co sprzedajemy) i wystawia market sell.
+        """
         try:
+            # sprawdź czy mamy pozycję
             if not self.db.has_open_position(symbol):
                 send_telegram(f"⚠️ Brak otwartej pozycji {symbol}.")
                 return
 
-            asset = symbol.replace("USDC", "").replace("USDT", "")
-            qty = self._get_balance(asset)
-            if qty <= 0:
-                send_telegram(f"❌ Brak {asset} do sprzedaży.")
+            # rozpoznaj quote i base
+            quotes = ["USDC","USDT","BTC","BNB","TRY","ETH","BUSD"]
+            quote = next((q for q in quotes if symbol.endswith(q)), None)
+            if quote:
+                base = symbol[:-len(quote)]
+            else:
+                # fallback: weź wszystko do pierwszego znanego sufiksu
+                # albo jeśli nic nie pasuje, spróbuj usunąć USDC/USDT
+                base = symbol.replace("USDC","").replace("USDT","")
+            base = base.upper().strip()
+            if not base:
+                send_telegram(f"❌ Nie udało się wyznaczyć assetu z symbolu {symbol}")
                 return
 
-            send_telegram(f"🔴 Sprzedaję wszystko z {symbol} ({qty:.6f})...")
-            if not self.paper:
-                order = self.client.order_market_sell(symbol=symbol, quantity=str(qty))
-                avg_price = safe_float(order["fills"][0]["price"]) if order.get("fills") else 0
-                send_telegram(f"✅ Sprzedano {qty:.6f} {symbol} @ {avg_price:.2f}")
-            else:
-                send_telegram(f"[PAPER] Sprzedano {qty:.6f} {symbol}")
+            qty = self._get_balance(base)
+            if qty <= 0:
+                send_telegram(f"❌ Brak {base} do sprzedaży (saldo {qty}).")
+                # zamknij pozycję w DB żeby nie spamować dalej (opcjonalne)
+                self.db.close_position(symbol)
+                return
 
+            send_telegram(f"🔴 Sprzedaję wszystko z {symbol} ({qty:.8f} {base})...")
+
+            if self.paper:
+                send_telegram(f"[PAPER] Sprzedano {qty:.8f} {base} z rynku {symbol}")
+                self.db.close_position(symbol)
+                return
+
+            # dopasuj do step size jeśli mamy info
+            info = self.symbol_filters.get(symbol, {})
+            step = info.get("step_size", 0.000001)
+            qty_to_sell = floor_to_step(qty, step)
+            if qty_to_sell <= 0:
+                send_telegram(f"⚠️ Ilość po zaokrągleniu = 0, nie sprzedaję.")
+                return
+
+            order = self.client.order_market_sell(symbol=symbol, quantity=str(qty_to_sell))
+            avg_price = safe_float(order["fills"][0]["price"]) if order.get("fills") else 0.0
+            send_telegram(f"✅ Sprzedano {qty_to_sell:.8f} {base} @ {avg_price} (rynek {symbol})")
             self.db.close_position(symbol)
-            send_telegram(f"📉 Pozycja {symbol} zamknięta i usunięta z bazy.")
         except Exception as e:
             send_telegram(f"❌ Błąd sprzedaży {symbol}: {e}")
-
-    def enqueue(self, sig): self.q.put(sig)
+            print("Sell_all error:", e)
 
     def _buy(self, symbol, price):
+        # podstawowe zabezpieczenia przeciw spamowi/powtórkom
         if self.db.has_open_position(symbol):
             print(f"⛔ {symbol} już otwarty — pomijam")
             return
@@ -270,17 +261,23 @@ def _buy(self, symbol, price):
             print(f"🕐 {symbol} w cooldownie — pomijam")
             return
 
+        # rozpoznaj quote
         quote = next((q for q in ["USDC","USDT","BTC","BNB","TRY","ETH"] if symbol.endswith(q)), None)
-        if not quote: return
+        if not quote:
+            print("❓ Nie rozpoznano quote:", symbol)
+            return
 
         info = self.symbol_filters.get(symbol, {})
         step = info.get("step_size", 0.000001)
         min_notional = CFG["MIN_NOTIONALS"].get(quote, info.get("min_notional", CFG["MIN_NOTIONAL_DEFAULT"]))
 
         balance = self._get_balance(quote)
-        if quote == "BNB" and balance < min_notional:
-            send_telegram(f"⚠️ Mało BNB ({balance:.4f}), konwertuję część USDC...")
-            self.convert_usdc_to_bnb()
+
+        # jeśli brakuje quote i quote != USDC -> spróbuj skonwertować z USDC na ten quote
+        if balance < min_notional and quote != "USDC":
+            send_telegram(f"⚠️ Mało {quote} ({balance:.6f}), próbuję konwersji USDC→{quote} ...")
+            converted_qty = self.convert_usdc_to_target(quote)
+            # po konwersji odczyt salda ponownie
             balance = self._get_balance(quote)
 
         invest = balance * CFG["BUY_ALLOCATION_PERCENT"]
@@ -302,6 +299,7 @@ def _buy(self, symbol, price):
                 send_telegram(f"🟢 KUPNO {symbol}: {qty:.8f} @ {avg:.4f}")
         except Exception as e:
             send_telegram(f"❌ Błąd kupna {symbol}: {e}")
+            print("Buy error:", e)
         finally:
             self.last_trade_ts[symbol] = time.time()
             self.active_symbols.discard(symbol)
@@ -309,7 +307,8 @@ def _buy(self, symbol, price):
     def worker(self):
         while True:
             sig = self.q.get()
-            try: self._buy(sig["symbol"], sig["price"])
+            try:
+                self._buy(sig["symbol"], sig["price"])
             except Exception as e:
                 print("Worker error:", e)
                 self.active_symbols.discard(sig.get("symbol"))
@@ -379,7 +378,7 @@ class WS:
 
 # === MAIN ===
 if __name__ == "__main__":
-    print("🚀 Start BBOT 2.3 (auto USDC→BNB + manual sellall)")
+    print("🚀 Start BBOT 2.3 (auto USDC→target + manual sellall)")
     db = DB(); exe = Executor(db); strat = Strategy(exe)
     ws = WS(strat); tg = TelegramBot(db, exe)
     threading.Thread(target=ws.run, daemon=True).start()
