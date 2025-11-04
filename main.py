@@ -155,40 +155,82 @@ class Executor:
             print("Balance error:", e)
             return 0.0
 
-  def convert_usdc_to_target(self, target_symbol):
+def _convert_usdc(self, target, convert_percent):
     """
-    🔄 Konwertuje część USDC na docelową walutę (np. USDT, BNB, BTC itd.), jeśli jej brakuje.
-    Ilość konwersji ustalana przez CONVERT_FROM_USDC_PERCENT.
+    Skonwertuj część USDC -> target.
+
+    Args:
+        target (str): Symbol waluty docelowej (np. "TRY").
+        convert_percent (float): Ułamek (0..1) całego balansu USDC do konwersji.
+
+    Returns:
+        tuple: (ilość target [base], ilość użytego USDC),
+               lub (0.0, 0.0) w przypadku błędu.
     """
-    pass  # <- tymczasowo, żeby nie było błędu
-    try:
-        usdc_balance = self._get_balance("USDC")
-        if usdc_balance <= 0:
-            send_telegram("❌ Brak środków USDC do konwersji.")
-            return
+    usdc_bal = self._get_balance("USDC")
+    if usdc_bal <= 0:
+        return 0.0, 0.0
 
-        convert_amount = usdc_balance * CFG["CONVERT_FROM_USDC_PERCENT"]
-        if convert_amount < 1:
-            send_telegram(f"⚠️ Zbyt mała kwota do konwersji: {convert_amount:.2f} USDC")
-            return
+    amount_usdc = usdc_bal * float(convert_percent)
+    if amount_usdc <= 0:
+        return 0.0, 0.0
 
-        # Tworzymy symbol np. USDTUSDC, BTCUSDC itd.
-        pair = f"{target_symbol}USDC"
-        send_telegram(f"🔄 Konwertuję {convert_amount:.2f} USDC → {target_symbol}...")
+    pair = f"{target}USDC"  # np. TRYUSDC -> kupujemy TRY za USDC
 
-        if not self.paper:
+    # Retry wrapper na zamówienie
+    attempts = CFG["API_RETRY_ATTEMPTS"]
+    backoff = CFG["API_RETRY_BACKOFF"]
+    last_exc = None
+
+    for i in range(1, attempts + 1):
+        try:
             order = self.client.order_market_buy(
                 symbol=pair,
-                quoteOrderQty=str(round(convert_amount, 2))
+                quoteOrderQty=str(round(amount_usdc, 6))
             )
-            filled_qty = safe_float(order.get("executedQty"))
-            avg_price = safe_float(order["fills"][0]["price"]) if order.get("fills") else 0
-            send_telegram(f"✅ Przekonwertowano {convert_amount:.2f} USDC na {filled_qty:.5f} {target_symbol} @ {avg_price:.2f}")
-        else:
-            send_telegram(f"[PAPER] Symulacja konwersji {convert_amount:.2f} USDC → {target_symbol}")
 
-    except Exception as e:
-        send_telegram(f"❌ Błąd konwersji USDC→{target_symbol}: {e}")
+            # Policz ile base dostaliśmy
+            executed_qty = safe_float(
+                order.get('executedQty')
+                or sum(safe_float(f.get('qty', 0)) for f in order.get('fills', []))
+            )
+
+            send_telegram(
+                f"💱 Skonwertowano {amount_usdc:.6f} USDC → "
+                f"{executed_qty:.8f} {target} (para {pair})"
+            )
+
+            return executed_qty, amount_usdc
+
+        except Exception as e:
+            last_exc = e
+            wait = backoff * (2 ** (i - 1))
+            print(
+                f"[convert retry] error converting {pair}: {e} — "
+                f"retry {i}/{attempts} after {wait:.1f}s"
+            )
+            time.sleep(wait)
+
+    print("Conversion error (final):", last_exc)
+    return 0.0, 0.0
+
+
+def enqueue(self, sig):
+    """Dodaj sygnał do kolejki."""
+    self.q.put(sig)
+
+
+def _buy(self, symbol, price):
+    """
+    Kup po cenie rynkowej.
+
+    Zabezpieczenia:
+    - cooldown / lock na symbol
+    - używa symbol_filters (minNotional, step)
+    - konwersja USDC -> quote i użycie CAŁEJ przekonwertowanej kwoty do zakupu (jeśli brak quote)
+    - retry + logi błędów
+    """
+    pass  # Implementacja właściwa tutaj
 
         """Ręczna sprzedaż całej pozycji"""
         try:
