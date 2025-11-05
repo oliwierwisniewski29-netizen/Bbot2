@@ -137,13 +137,16 @@ class Executor:
         self.last_trade_ts = {}
         self.active_symbols = set()
 
+    # === API ===
     @retry_api()
     def _api_get_exchange_info(self):
         return self.client.get_exchange_info()
 
+    # === FILTRY SYMBOLI ===
     def _load_symbol_filters(self):
         try:
-            if not self.client: return
+            if not self.client:
+                return
             info = self._api_get_exchange_info()
             for s in info["symbols"]:
                 symbol = s["symbol"]
@@ -154,11 +157,15 @@ class Executor:
                         min_notional = safe_float(f.get("minNotional", min_notional))
                     if f["filterType"] == "LOT_SIZE":
                         step_size = safe_float(f.get("stepSize", step_size))
-                self.symbol_filters[symbol] = {"min_notional": min_notional, "step_size": step_size}
+                self.symbol_filters[symbol] = {
+                    "min_notional": min_notional,
+                    "step_size": step_size
+                }
             print(f"✅ Załadowano {len(self.symbol_filters)} filtrów")
         except Exception as e:
             print("Błąd filtrów:", e)
 
+    # === BALANSE ===
     def _get_balance(self, asset):
         if self.paper:
             return 100.0 if asset == "USDC" else 0.0
@@ -168,6 +175,54 @@ class Executor:
         except Exception as e:
             print("Balance error:", e)
             return 0.0
+
+    # === ENQUEUE (NAPRAWA BŁĘDU) ===
+    def enqueue(self, sig):
+        """Dodaje sygnał do kolejki (np. z Strategy.on_tick)"""
+        self.q.put(sig)
+
+    # === KONWERSJA USDC → TARGET ===
+    def convert_usdc_to_target(self, target, convert_percent):
+        """Skonwertuj część USDC → target. convert_percent (0..1) procent z całego USDC balansu.
+        Zwraca: ilość target (base), która powstała oraz ile USDC użyto, albo (0,0) przy błędzie."""
+        usdc_bal = self._get_balance("USDC")
+        if usdc_bal <= 0:
+            return 0.0, 0.0
+
+        amount_usdc = usdc_bal * float(convert_percent)
+        if amount_usdc <= 0:
+            return 0.0, 0.0
+
+        pair = f"{target}USDC"  # np. TRYUSDC -> kupujemy TRY za USDC
+        attempts = CFG["API_RETRY_ATTEMPTS"]
+        backoff = CFG["API_RETRY_BACKOFF"]
+        last_exc = None
+
+        for i in range(1, attempts + 1):
+            try:
+                order = self.client.order_market_buy(
+                    symbol=pair,
+                    quoteOrderQty=str(round(amount_usdc, 6))
+                )
+
+                executed_qty = safe_float(
+                    order.get('executedQty') or
+                    sum(safe_float(f.get('qty', 0)) for f in order.get('fills', []))
+                )
+
+                send_telegram(
+                    f"💱 Skonwertowano {amount_usdc:.6f} USDC → {executed_qty:.8f} {target} (para {pair})"
+                )
+                return executed_qty, amount_usdc
+
+            except Exception as e:
+                last_exc = e
+                wait = backoff * (2 ** (i - 1))
+                print(f"[convert retry] error converting {pair}: {e} — retry {i}/{attempts} after {wait:.1f}s")
+                time.sleep(wait)
+
+        print("Conversion error (final):", last_exc)
+        return 0.0, 0.0
 
     # === NOWA FUNKCJA KONWERSJI ===
     def convert_from_usdc(self, target: str, convert_percent: float):
@@ -389,7 +444,7 @@ class WS:
 
 # === MAIN ===
 if __name__ == "__main__":
-    print("🚀 Start BBOT 2.6")
+    print("🚀 Start BBOT 2.7")
     db = DB()
     exe = Executor(db)
     strat = Strategy(exe)
