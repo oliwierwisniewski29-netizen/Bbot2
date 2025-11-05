@@ -45,7 +45,7 @@ CFG = {
         "PLN": 25.0
     },
     "MIN_NOTIONAL_DEFAULT": 5.0,
-    "MAX_VOLATILITY_PERCENT": 5.0,  # maksymalne dopuszczalne wahania ceny wstecz (%)
+    "MIN_VOLATILITY_PERCENT": 7.0,  # maksymalne dopuszczalne wahania ceny wstecz (%) 
     "VOLATILITY_LOOKBACK": 60       # liczba sekund, z których analizowana jest zmienność
 }
 
