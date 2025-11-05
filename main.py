@@ -398,9 +398,9 @@ class Strategy:
         max_p, min_p = max(prices), min(prices)
         volatility = ((max_p - min_p) / min_p) * 100 if min_p > 0 else 0
 
-        if volatility > CFG["MAX_VOLATILITY_PERCENT"]:
-            # rynek zbyt niestabilny — pomijamy sygnał
-            print(f"⚠️ Pomijam {s}: zmienność {volatility:.1f}% > {CFG['MAX_VOLATILITY_PERCENT']}%")
+        if volatility < CFG["MIN_VOLATILITY_PERCENT"]:
+            # rynek zbyt spokojny — pomijamy sygnał
+            print(f"😴 Pomijam {s}: zmienność {volatility:.1f}% < {CFG['MIN_VOLATILITY_PERCENT']}%")
             return
 
         # sprawdź spadek ceny
@@ -408,7 +408,7 @@ class Strategy:
         if old:
             pct = (p - old) / old * 100
             if pct <= -abs(CFG["PCT_THRESHOLD"]):
-                print(f"💥 Spadek {s}: {pct:.2f}% → kupuję (zmienność {volatility:.1f}%)")
+                print(f"💥 Spadek {s}: {pct:.2f}% (zmienność {volatility:.1f}%) → kupuję")
                 self.executor.enqueue({"symbol": s, "price": p})
 
 # === TELEGRAM ===
@@ -466,7 +466,7 @@ class WS:
 
 # === MAIN ===
 if __name__ == "__main__":
-    print("🚀 Start BBOT 2.9")
+    print("🚀 Start BBOT 3.0")
     db = DB()
     exe = Executor(db)
     strat = Strategy(exe)
