@@ -44,7 +44,9 @@ CFG = {
         "JPY": 100.0,
         "PLN": 25.0
     },
-    "MIN_NOTIONAL_DEFAULT": 5.0
+    "MIN_NOTIONAL_DEFAULT": 5.0,
+    "MAX_VOLATILITY_PERCENT": 10.0,  # maksymalne dopuszczalne wahania ceny wstecz (%)
+    "VOLATILITY_LOOKBACK": 60       # liczba sekund, z których analizowana jest zmienność
 }
 
 # === POMOCNICZE ===
@@ -373,20 +375,40 @@ class Executor:
 class Strategy:
     def __init__(self, executor):
         self.executor = executor
-        self.price_hist = defaultdict(lambda: deque(maxlen=100))
+        self.price_hist = defaultdict(lambda: deque(maxlen=200))  # większy bufor
 
     def on_tick(self, entry, ts):
         s = entry.get("s")
         p = safe_float(entry.get("c"))
         if not s or p <= 0 or s.startswith("USDC"):
             return
+
         dq = self.price_hist[s]
         dq.append((ts, p))
+
+        # usuń stare dane spoza okna analizy
+        while dq and dq[0][0] < ts - CFG["VOLATILITY_LOOKBACK"]:
+            dq.popleft()
+
+        # sprawdź zmienność rynku w ostatnim okresie
+        prices = [pp for _, pp in dq]
+        if len(prices) < 5:
+            return  # za mało danych do oceny stabilności
+
+        max_p, min_p = max(prices), min(prices)
+        volatility = ((max_p - min_p) / min_p) * 100 if min_p > 0 else 0
+
+        if volatility > CFG["MAX_VOLATILITY_PERCENT"]:
+            # rynek zbyt niestabilny — pomijamy sygnał
+            print(f"⚠️ Pomijam {s}: zmienność {volatility:.1f}% > {CFG['MAX_VOLATILITY_PERCENT']}%")
+            return
+
+        # sprawdź spadek ceny
         old = next((pp for tt, pp in dq if tt <= ts - CFG["WINDOW_SECONDS"]), None)
         if old:
             pct = (p - old) / old * 100
             if pct <= -abs(CFG["PCT_THRESHOLD"]):
-                print(f"💥 Spadek {s}: {pct:.2f}% → kupuję")
+                print(f"💥 Spadek {s}: {pct:.2f}% → kupuję (zmienność {volatility:.1f}%)")
                 self.executor.enqueue({"symbol": s, "price": p})
 
 # === TELEGRAM ===
@@ -444,7 +466,7 @@ class WS:
 
 # === MAIN ===
 if __name__ == "__main__":
-    print("🚀 Start BBOT 2.7")
+    print("🚀 Start BBOT 2.8")
     db = DB()
     exe = Executor(db)
     strat = Strategy(exe)
