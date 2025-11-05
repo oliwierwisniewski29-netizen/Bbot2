@@ -45,7 +45,7 @@ CFG = {
         "PLN": 25.0
     },
     "MIN_NOTIONAL_DEFAULT": 5.0,
-    "MAX_VOLATILITY_PERCENT": 10.0,  # maksymalne dopuszczalne wahania ceny wstecz (%)
+    "MAX_VOLATILITY_PERCENT": 5.0,  # maksymalne dopuszczalne wahania ceny wstecz (%)
     "VOLATILITY_LOOKBACK": 60       # liczba sekund, z których analizowana jest zmienność
 }
 
@@ -466,7 +466,7 @@ class WS:
 
 # === MAIN ===
 if __name__ == "__main__":
-    print("🚀 Start BBOT 2.8")
+    print("🚀 Start BBOT 2.9")
     db = DB()
     exe = Executor(db)
     strat = Strategy(exe)
