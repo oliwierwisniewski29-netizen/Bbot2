@@ -31,7 +31,6 @@ CFG = {
     # minimalne notional dla każdej waluty
     "MIN_NOTIONALS": {
         "USDC": 5.0,
-        "USDT": 5.0,
         "BNB": 0.01,
         "BTC": 0.0001,
         "TRY": 10.0,
@@ -471,7 +470,7 @@ class WS:
 
 # === MAIN ===
 if __name__ == "__main__":
-    print("🚀 Start BBOT 3.3")
+    print("🚀 Start BBOT 3.4")
     db = DB()
     exe = Executor(db)
     strat = Strategy(exe)
