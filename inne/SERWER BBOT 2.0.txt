@@ -1,0 +1,30 @@
+SERWER BBOT 2.0
+co oznacz ten błąd (screen)
+
+login: root
+hasło: sT93s3wwPXfA
+
+DOSTANIE SIE DO BOTA
+1.screen -S bot
+2.cd /root/Bbot\ 2.0
+3.source venv/bin/activate
+4.python3 main.py
+5.CRTL+A+D
+6.screen -ls (sprawdza liste odpalonych botów)
+7.screen -r 1234 (wchodzi do wygranego bota)
+8.CTRL+C wyłącza go 
+
+ZAAKTUALIZOWANIE KODU BOTA
+Git bush: (z foldera)
+1.git add .
+2.git commit -m "update bota"
+3.git push origin main
+Hetzner:
+1.cd /root/Bbot\ 2.0
+2.git pull origin main
+3.screen -S bot
+4.cd /root/Bbot\ 2.0
+5.python3 -m venv venv
+6.source venv/bin/activate
+7.python3 main.py
+
