@@ -374,12 +374,19 @@ class Executor:
 class Strategy:
     def __init__(self, executor):
         self.executor = executor
-        self.price_hist = defaultdict(lambda: deque(maxlen=200))  # większy bufor historii
+        self.price_hist = defaultdict(lambda: deque(maxlen=200))  # bufor historii cen
 
     def on_tick(self, entry, ts):
-        s = entry.get("s")
-        p = safe_float(entry.get("c"))
-        if not s or p <= 0 or s.startswith("USDC"):
+        s = entry.get("s")  # symbol, np. BTCUSDC
+        p = safe_float(entry.get("c"))  # aktualna cena
+
+        # pomiń jeśli brak danych lub cena niepoprawna
+        if not s or p <= 0:
+            return
+
+        # 🚫 pomijaj tylko pary z USDT
+        if s.endswith("USDT"):
+            print(f"⏭️ Pomijam {s} (para w USDT)")
             return
 
         dq = self.price_hist[s]
@@ -401,14 +408,14 @@ class Strategy:
         # policz spadek %
         pct = (p - old) / old * 100
 
-        # jeśli cena spadła wystarczająco mocno
+        # sprawdzamy tylko potencjalne spadki
         if pct <= -abs(CFG["PCT_THRESHOLD"]):
-            # 🔍 teraz sprawdzamy zmienność
+            # 🔍 obliczamy zmienność tylko w tym momencie (dla potencjalnego zakupu)
             prices = [pp for _, pp in dq]
             max_p, min_p = max(prices), min(prices)
             volatility = ((max_p - min_p) / min_p) * 100 if min_p > 0 else 0
 
-            # ✅ kupujemy tylko, jeśli zmienność jest DUŻA
+            # ✅ kupujemy tylko jeśli zmienność >= MIN_VOLATILITY_PERCENT
             if volatility >= CFG["MIN_VOLATILITY_PERCENT"]:
                 print(f"💥 Spadek {s}: {pct:.2f}% i zmienność {volatility:.1f}% ≥ {CFG['MIN_VOLATILITY_PERCENT']}% → kupuję")
                 self.executor.enqueue({"symbol": s, "price": p})
@@ -470,7 +477,7 @@ class WS:
 
 # === MAIN ===
 if __name__ == "__main__":
-    print("🚀 Start BBOT 3.4")
+    print("🚀 Start BBOT 3.5")
     db = DB()
     exe = Executor(db)
     strat = Strategy(exe)
