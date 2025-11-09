@@ -369,7 +369,6 @@ class Executor:
             except Exception as e:
                 print("Worker error:", e)
                 self.active_symbols.discard(sig.get("symbol"))
-
 # === STRATEGIA ===
 class Strategy:
     def __init__(self, executor):
@@ -380,13 +379,8 @@ class Strategy:
         s = entry.get("s")  # symbol, np. BTCUSDC
         p = safe_float(entry.get("c"))  # aktualna cena
 
-        # pomiń jeśli brak danych lub cena niepoprawna
+        # pomiń błędne dane
         if not s or p <= 0:
-            return
-
-        # 🚫 pomijaj tylko pary z USDT
-        if s.endswith("USDT"):
-            print(f"⏭️ Pomijam {s} (para w USDT)")
             return
 
         dq = self.price_hist[s]
@@ -417,6 +411,11 @@ class Strategy:
 
             # ✅ kupujemy tylko jeśli zmienność >= MIN_VOLATILITY_PERCENT
             if volatility >= CFG["MIN_VOLATILITY_PERCENT"]:
+                # 🚫 dopiero teraz pomijamy pary w USDT
+                if s.endswith("USDT"):
+                    print(f"⏭️ Pomijam {s} (para w USDT, mimo że spełnia warunki)")
+                    return
+
                 print(f"💥 Spadek {s}: {pct:.2f}% i zmienność {volatility:.1f}% ≥ {CFG['MIN_VOLATILITY_PERCENT']}% → kupuję")
                 self.executor.enqueue({"symbol": s, "price": p})
             else:
@@ -477,7 +476,7 @@ class WS:
 
 # === MAIN ===
 if __name__ == "__main__":
-    print("🚀 Start BBOT 3.5")
+    print("🚀 Start BBOT 3.6")
     db = DB()
     exe = Executor(db)
     strat = Strategy(exe)
