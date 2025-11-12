@@ -182,49 +182,6 @@ class Executor:
         """Dodaje sygnał do kolejki (np. z Strategy.on_tick)"""
         self.q.put(sig)
 
-    # === KONWERSJA USDC → TARGET ===
-    def convert_usdc_to_target(self, target, convert_percent):
-        """Skonwertuj część USDC → target. convert_percent (0..1) procent z całego USDC balansu.
-        Zwraca: ilość target (base), która powstała oraz ile USDC użyto, albo (0,0) przy błędzie."""
-        usdc_bal = self._get_balance("USDC")
-        if usdc_bal <= 0:
-            return 0.0, 0.0
-
-        amount_usdc = usdc_bal * float(convert_percent)
-        if amount_usdc <= 0:
-            return 0.0, 0.0
-
-        pair = f"{target}USDC"  # np. TRYUSDC -> kupujemy TRY za USDC
-        attempts = CFG["API_RETRY_ATTEMPTS"]
-        backoff = CFG["API_RETRY_BACKOFF"]
-        last_exc = None
-
-        for i in range(1, attempts + 1):
-            try:
-                order = self.client.order_market_buy(
-                    symbol=pair,
-                    quoteOrderQty=str(round(amount_usdc, 6))
-                )
-
-                executed_qty = safe_float(
-                    order.get('executedQty') or
-                    sum(safe_float(f.get('qty', 0)) for f in order.get('fills', []))
-                )
-
-                send_telegram(
-                    f"💱 Skonwertowano {amount_usdc:.6f} USDC → {executed_qty:.8f} {target} (para {pair})"
-                )
-                return executed_qty, amount_usdc
-
-            except Exception as e:
-                last_exc = e
-                wait = backoff * (2 ** (i - 1))
-                print(f"[convert retry] error converting {pair}: {e} — retry {i}/{attempts} after {wait:.1f}s")
-                time.sleep(wait)
-
-        print("Conversion error (final):", last_exc)
-        return 0.0, 0.0
-
     # === NOWA FUNKCJA KONWERSJI ===
     def convert_from_usdc(self, target: str, convert_percent: float):
         """
@@ -257,7 +214,7 @@ class Executor:
             for i in range(1, attempts + 1):
                 try:
                     if not self.paper:
-                        order = self.client.order_market_buy(symbol=pair, quoteOrderQty=str(round(amount_usdc, 6)))
+                        order = self.client.order_market_buy(symbol=symbol, quoteOrderQty=str(quote_qty))
                         executed_qty = safe_float(order.get('executedQty')) or sum(
                             safe_float(f.get('qty', 0)) for f in order.get('fills', [])
                         )
@@ -318,7 +275,7 @@ class Executor:
         except Exception as e:
             send_telegram(f"❌ Błąd sprzedaży {symbol}: {e}")
 
-    def _buy(self, symbol, price):
+        def _buy(self, symbol, price):
         if self.db.has_open_position(symbol) or symbol in self.active_symbols:
             return
         if time.time() - self.last_trade_ts.get(symbol, 0) < CFG["TRADE_COOLDOWN_SECONDS"]:
@@ -334,6 +291,7 @@ class Executor:
         min_notional = CFG["MIN_NOTIONALS"].get(quote, CFG["MIN_NOTIONAL_DEFAULT"])
         balance = self._get_balance(quote)
 
+        # jeśli mało quote, a nie USDC → konwertuj z USDC
         if balance < min_notional and quote != "USDC":
             send_telegram(f"⚠️ Mało {quote}, konwertuję z USDC...")
             self.convert_from_usdc(quote, CFG["CONVERT_FROM_USDC_PERCENT"])
@@ -345,16 +303,31 @@ class Executor:
 
         self.active_symbols.add(symbol)
         try:
+            quote_qty = round(invest, 8)
+
             if self.paper:
-                qty = floor_to_step(invest / price, step)
+                qty = quote_qty / price
                 self.db.insert_pos(symbol, qty, price)
                 send_telegram(f"[PAPER] KUPNO {symbol}: {qty:.8f} @ {price:.4f}")
             else:
-                order = self.client.order_market_buy(symbol=symbol, quoteOrderQty=str(round(invest, 6)))
+                # sprawdź filtry
+                info = self.symbol_filters.get(symbol, {})
+                step = info.get("step_size", 0.000001)
+                min_notional = info.get("min_notional", 5.0)
+
+                if invest < min_notional:
+                    send_telegram(f"⚠️ Kwota {invest:.2f} < minimalna {min_notional:.2f}, pomijam zakup {symbol}")
+                    return
+
+                invest = math.floor(invest / step) * step
+                quote_qty = round(invest, 8)
+
+                order = self.client.order_market_buy(symbol=symbol, quoteOrderQty=str(quote_qty))
                 qty = safe_float(order.get("executedQty"))
                 avg = safe_float(order["fills"][0]["price"]) if order.get("fills") else price
                 self.db.insert_pos(symbol, qty, avg)
                 send_telegram(f"🟢 KUPNO {symbol}: {qty:.8f} @ {avg:.4f}")
+
         except Exception as e:
             send_telegram(f"❌ Błąd kupna {symbol}: {e}")
         finally:
@@ -476,7 +449,7 @@ class WS:
 
 # === MAIN ===
 if __name__ == "__main__":
-    print("🚀 Start BBOT 3.7")
+    print("🚀 Start BBOT 3.8")
     db = DB()
     exe = Executor(db)
     strat = Strategy(exe)
