@@ -275,7 +275,7 @@ class Executor:
         except Exception as e:
             send_telegram(f"❌ Błąd sprzedaży {symbol}: {e}")
 
-        def _buy(self, symbol, price):
+    def _buy(self, symbol, price):
         if self.db.has_open_position(symbol) or symbol in self.active_symbols:
             return
         if time.time() - self.last_trade_ts.get(symbol, 0) < CFG["TRADE_COOLDOWN_SECONDS"]:
@@ -449,7 +449,7 @@ class WS:
 
 # === MAIN ===
 if __name__ == "__main__":
-    print("🚀 Start BBOT 3.8")
+    print("🚀 Start BBOT 3.9")
     db = DB()
     exe = Executor(db)
     strat = Strategy(exe)
