@@ -477,7 +477,7 @@ class WS:
 
 # === MAIN ===
 if __name__ == "__main__":
-    print("🚀 Start BBOT 3.9")
+    print("🚀 Start BBOT 4.0")
     db = DB()
     exe = Executor(db)
     strat = Strategy(exe)
