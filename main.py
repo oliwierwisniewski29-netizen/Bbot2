@@ -44,8 +44,9 @@ CFG = {
         "PLN": 25.0
     },
     "MIN_NOTIONAL_DEFAULT": 5.0,
-    "MIN_VOLATILITY_PERCENT": 10.0,  # maksymalne dopuszczalne wahania ceny wstecz (%) 
-    "VOLATILITY_LOOKBACK": 60       # liczba sekund, z których analizowana jest zmienność
+    "MIN_VOLATILITY_PERCENT": 10.0,  # maksymalne dopuszczalne wahania ceny wstecz (%)
+    "MIN_CANDLE_COUNT": 7,          # świece 1 dniowe
+    "VOLATILITY_LOOKBACK": 60       # świece 4 godzinne
 }
 
 # === POMOCNICZE ===
@@ -342,57 +343,84 @@ class Executor:
             except Exception as e:
                 print("Worker error:", e)
                 self.active_symbols.discard(sig.get("symbol"))
+
 # === STRATEGIA ===
 class Strategy:
     def __init__(self, executor):
         self.executor = executor
-        self.price_hist = defaultdict(lambda: deque(maxlen=200))  # bufor historii cen
+        self.price_hist = defaultdict(lambda: deque(maxlen=200))
+        self.candle_cache = {}
+
+    def get_candles(self, symbol, interval="4h", limit=100):
+        """Pobiera świece z Binance (z cache jeśli świeże)."""
+        import time
+        now = time.time()
+
+        # prosty cache – odśwież co 30 minut max
+        if symbol in self.candle_cache:
+            cached = self.candle_cache[symbol]
+            if now - cached["ts"] < 1800:
+                return cached["data"]
+
+        try:
+            candles = self.executor.client.get_klines(symbol=symbol, interval=interval, limit=limit)
+            closes = [float(c[4]) for c in candles]  # c[4] = cena zamknięcia
+            self.candle_cache[symbol] = {"data": closes, "ts": now}
+            return closes
+        except Exception as e:
+            print(f"⚠️ Błąd pobierania świec {interval} dla {symbol}: {e}")
+            return []
 
     def on_tick(self, entry, ts):
         s = entry.get("s")  # symbol, np. BTCUSDC
         p = safe_float(entry.get("c"))  # aktualna cena
 
-        # pomiń błędne dane
         if not s or p <= 0:
             return
 
         dq = self.price_hist[s]
         dq.append((ts, p))
 
-        # usuń stare dane spoza okna analizy
         while dq and dq[0][0] < ts - CFG["VOLATILITY_LOOKBACK"]:
             dq.popleft()
 
-        # za mało danych – pomiń
         if len(dq) < 5:
             return
 
-        # znajdź cenę sprzed określonego czasu (do obliczenia spadku)
         old = next((pp for tt, pp in dq if tt <= ts - CFG["WINDOW_SECONDS"]), None)
         if not old:
             return
 
-        # policz spadek %
         pct = (p - old) / old * 100
 
         # sprawdzamy tylko potencjalne spadki
         if pct <= -abs(CFG["PCT_THRESHOLD"]):
-            # 🔍 obliczamy zmienność tylko w tym momencie (dla potencjalnego zakupu)
-            prices = [pp for _, pp in dq]
-            max_p, min_p = max(prices), min(prices)
+
+            # 🔹🔹🔹 SPRAWDZENIE ŚWIEC 1-DNIOWYCH (czy coin nie jest nowy)
+            daily_candles = self.get_candles(s, interval="1d", limit=CFG.get("MIN_CANDLE_COUNT", 50))
+            if len(daily_candles) < CFG.get("MIN_CANDLE_COUNT", 50):
+                print(f"⚠️ {s} ma tylko {len(daily_candles)} świec 1d – zbyt świeża kryptowaluta, pomijam.")
+                return
+            # 🔹🔹🔹 KONIEC SPRAWDZANIA ŚWIEC 1-DNIOWYCH
+
+            # 🔍 Zmienność liczona ze świec 4h
+            candles_4h = self.get_candles(s, interval="4h", limit=CFG.get("VOLATILITY_LOOKBACK", 50))
+
+            if len(candles_4h) < 5:
+                return
+
+            max_p, min_p = max(candles_4h), min(candles_4h)
             volatility = ((max_p - min_p) / min_p) * 100 if min_p > 0 else 0
 
-            # ✅ kupujemy tylko jeśli zmienność >= MIN_VOLATILITY_PERCENT
             if volatility >= CFG["MIN_VOLATILITY_PERCENT"]:
-                # 🚫 dopiero teraz pomijamy pary w USDT
                 if s.endswith("USDT"):
                     print(f"⏭️ Pomijam {s} (para w USDT, mimo że spełnia warunki)")
                     return
 
-                print(f"💥 Spadek {s}: {pct:.2f}% i zmienność {volatility:.1f}% ≥ {CFG['MIN_VOLATILITY_PERCENT']}% → kupuję")
+                print(f"💥 Spadek {s}: {pct:.2f}% | Zmienność (4h): {volatility:.1f}% ≥ {CFG['MIN_VOLATILITY_PERCENT']}% → kupuję")
                 self.executor.enqueue({"symbol": s, "price": p})
             else:
-                print(f"⚠️ Pomijam {s}: spadek {pct:.2f}%, ale zmienność {volatility:.1f}% < {CFG['MIN_VOLATILITY_PERCENT']}%")
+                print(f"⚠️ Pomijam {s}: spadek {pct:.2f}%, ale zmienność (4h) {volatility:.1f}% < {CFG['MIN_VOLATILITY_PERCENT']}%")
 
 # === TELEGRAM ===
 class TelegramBot:
