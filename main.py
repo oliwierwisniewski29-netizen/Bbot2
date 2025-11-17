@@ -41,7 +41,13 @@ CFG = {
         "TRX": 100.0,
         "BRL": 10.0,
         "JPY": 100.0,
-        "PLN": 25.0
+        "PLN": 25.0,
+        "ARS": 2000.0,
+        "CZK": 200.0,
+        "MXN": 150.0,
+        "RON": 20.0,
+        "UAH": 100.0,
+        "ZAR": 100.0
     },
     "MIN_NOTIONAL_DEFAULT": 5.0,
     "MIN_VOLATILITY_PERCENT": 10.0,  # maksymalne dopuszczalne wahania ceny wstecz (%)
@@ -185,57 +191,63 @@ class Executor:
 
     # === NOWA FUNKCJA KONWERSJI ===
     def convert_from_usdc(self, target: str, convert_percent: float):
-        """
-        Skonwertuj część salda USDC -> target.
-        Zwraca (ilość_target, ilość_usdc_użyta) lub (0.0, 0.0) przy błędzie.
-        """
-        try:
-            usdc_bal = self._get_balance("USDC")
-            if usdc_bal <= 0:
-                send_telegram("❌ Brak środków USDC do konwersji.")
-                return 0.0, 0.0
-
-            amount_usdc = usdc_bal * float(convert_percent)
-            if amount_usdc <= 0:
-                send_telegram("⚠️ Nieprawidłowy procent konwersji (0%).")
-                return 0.0, 0.0
-
-            min_notional = CFG["MIN_NOTIONALS"].get("USDC", 5.0)
-            if amount_usdc < min_notional:
-                send_telegram(f"⚠️ Kwota {amount_usdc:.2f} USDC < minimalna {min_notional} USDC.")
-                return 0.0, 0.0
-
-            pair = f"{target}USDC"
-            send_telegram(f"🔄 Konwertuję {amount_usdc:.2f} USDC → {target} (para {pair})...")
-
-            attempts = CFG.get("API_RETRY_ATTEMPTS", 3)
-            backoff = CFG.get("API_RETRY_BACKOFF", 2)
-            last_exc = None
-
-            for i in range(1, attempts + 1):
-                try:
-                    if not self.paper:
-                        order = self.client.order_market_buy(symbol=symbol, quoteOrderQty=str(quote_qty))
-                        executed_qty = safe_float(order.get('executedQty')) or sum(
-                            safe_float(f.get('qty', 0)) for f in order.get('fills', [])
-                        )
-                        send_telegram(f"✅ Skonwertowano {amount_usdc:.2f} USDC → {executed_qty:.8f} {target}")
-                        return executed_qty, amount_usdc
-                    else:
-                        send_telegram(f"[PAPER] Symulacja konwersji {amount_usdc:.2f} USDC → {target}")
-                        return amount_usdc / 100, amount_usdc
-                except Exception as e:
-                    last_exc = e
-                    wait = backoff * (2 ** (i - 1))
-                    print(f"[convert retry] {pair} error: {e} — retry {i}/{attempts} after {wait:.1f}s")
-                    time.sleep(wait)
-
-            send_telegram(f"❌ Błąd konwersji {pair}: {last_exc}")
+    try:
+        usdc_bal = self._get_balance("USDC")
+        if usdc_bal <= 0:
+            send_telegram("❌ Brak środków USDC do konwersji.")
             return 0.0, 0.0
 
-        except Exception as e:
-            send_telegram(f"❌ Wyjątek konwersji USDC→{target}: {e}")
+        amount_usdc = usdc_bal * float(convert_percent)
+        if amount_usdc <= 0:
+            send_telegram("⚠️ Nieprawidłowy procent konwersji (0%).")
             return 0.0, 0.0
+
+        min_notional = CFG["MIN_NOTIONALS"].get("USDC", 5.0)
+        if amount_usdc < min_notional:
+            send_telegram(f"⚠️ Kwota {amount_usdc:.2f} USDC < minimalna {min_notional} USDC.")
+            return 0.0, 0.0
+
+        pair = f"{target}USDC"
+        # ==== NAJWAŻNIEJSZA POPRAWKA ====
+        if pair not in self.symbol_filters:
+            send_telegram(f"⚠️ Para {pair} nie istnieje – pomijam.")
+            return 0.0, 0.0
+        # =================================
+
+        send_telegram(f"🔄 Konwertuję {amount_usdc:.2f} USDC → {target} (para {pair})...")
+
+        attempts = CFG.get("API_RETRY_ATTEMPTS", 3)
+        backoff = CFG.get("API_RETRY_BACKOFF", 2)
+        last_exc = None
+
+        for i in range(1, attempts + 1):
+            try:
+                if not self.paper:
+                    order = self.client.order_market_buy(
+                        symbol=pair,
+                        quoteOrderQty=str(amount_usdc)
+                    )
+                    executed_qty = safe_float(order.get("executedQty")) or sum(
+                        safe_float(f.get("qty", 0)) for f in order.get('fills', [])
+                    )
+                    send_telegram(f"✅ Skonwertowano {amount_usdc:.2f} USDC → {executed_qty:.8f} {target}")
+                    return executed_qty, amount_usdc
+                else:
+                    send_telegram(f"[PAPER] Symulacja konwersji {amount_usdc:.2f} USDC → {target}")
+                    return amount_usdc / 100, amount_usdc
+
+            except Exception as e:
+                last_exc = e
+                wait = backoff * (2 ** (i - 1))
+                print(f"[convert retry] {pair} error: {e} — retry {i}/{attempts} after {wait:.1f}s")
+                time.sleep(wait)
+
+        send_telegram(f"❌ Błąd konwersji {pair}: {last_exc}")
+        return 0.0, 0.0
+
+    except Exception as e:
+        send_telegram(f"❌ Wyjątek konwersji USDC→{target}: {e}")
+        return 0.0, 0.0
 
     # === SPRZEDAŻ I KUPNO ===
     def sell_all_position(self, symbol):
@@ -477,7 +489,7 @@ class WS:
 
 # === MAIN ===
 if __name__ == "__main__":
-    print("🚀 Start BBOT 4.0")
+    print("🚀 Start BBOT 4.1")
     db = DB()
     exe = Executor(db)
     strat = Strategy(exe)
