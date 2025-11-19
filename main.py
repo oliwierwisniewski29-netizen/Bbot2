@@ -13,7 +13,7 @@ from dotenv import load_dotenv   # <-- TO DODAŁEM
 # === WCZYTANIE ZMIENNYCH ŚRODOWISKOWYCH ===
 load_dotenv()
 
-if not BINANCE_API_KEY or not BINANCE_API_SECRET:
+if not "BINANCE_API_KEY" or not "BINANCE_API_SECRET":
     raise RuntimeError("❌ Brakuje kluczy Binance w .env")
 
 if not TELEGRAM_BOT_TOKEN:
