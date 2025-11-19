@@ -8,19 +8,30 @@ from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from telegram import Update
 from binance.client import Client
 from functools import wraps
+from dotenv import load_dotenv   # <-- TO DODAŁEM
+
+# === WCZYTANIE ZMIENNYCH ŚRODOWISKOWYCH ===
+load_dotenv()
+
+"BINANCE_API_KEY" = os.getenv("BINANCE_API_KEY")
+"BINANCE_API_SECRET" = os.getenv("BINANCE_API_SECRET")
+"TELEGRAM_BOT_TOKEN" = os.getenv("TELEGRAM_BOT_TOKEN")
+
+if not BINANCE_API_KEY or not BINANCE_API_SECRET:
+    raise RuntimeError("❌ Brakuje kluczy Binance w .env")
+
+if not TELEGRAM_BOT_TOKEN:
+    raise RuntimeError("❌ Brakuje TELEGRAM_BOT_TOKEN w .env")
 
 # === KONFIGURACJA ===
 CFG = {
-    "BINANCE_API_KEY": "fygZMg3TIFqzjIOw7e0ZRNHRdP47wguZHugzATlohB7ZkdaX0gH4PRJvuh83PhqE",
-    "BINANCE_API_SECRET": "LXZ0nTBkObPHQXm7UoZc9wPbfQekDyk6QdQVWKL8YTZYVdwANZDm9yOjyPY1E1oe",
-    "TELEGRAM_BOT_TOKEN": "7971462955:AAHIqNKqJR38gr5ieC7_n5wafDD5bD-jRHE",
     "ALLOWED_CHAT_IDS": ["7684314138"],
 
     "WINDOW_SECONDS": 10,
     "PCT_THRESHOLD": 30.0,
-    "BUY_ALLOCATION_PERCENT": 1.0,        # ile % salda quote użyć na zakup
+    "BUY_ALLOCATION_PERCENT": 1.0,
     "BUY_USDC_PERCENT": 0.20,
-    "CONVERT_FROM_USDC_PERCENT": 0.20,    # ile % salda USDC przekonwertować
+    "CONVERT_FROM_USDC_PERCENT": 0.20,
     "TP_PERCENT": 7.0,
     "MAX_CONCURRENT_TRADES": 5,
     "PAPER_TRADING": False,
@@ -29,7 +40,6 @@ CFG = {
     "API_RETRY_ATTEMPTS": 3, 
     "API_RETRY_BACKOFF": 1.0,
 
-    # minimalne notional dla każdej waluty
     "MIN_NOTIONALS": {
         "USDC": 5.0,
         "BNB": 0.01,
@@ -50,10 +60,11 @@ CFG = {
         "UAH": 100.0,
         "ZAR": 100.0
     },
+
     "MIN_NOTIONAL_DEFAULT": 5.0,
-    "MIN_VOLATILITY_PERCENT": 10.0,  # maksymalne dopuszczalne wahania ceny wstecz (%)
-    "MIN_CANDLE_COUNT": 7,          # świece 1 dniowe
-    "VOLATILITY_LOOKBACK": 60       # świece 4 godzinne
+    "MIN_VOLATILITY_PERCENT": 10.0,
+    "MIN_CANDLE_COUNT": 7,
+    "VOLATILITY_LOOKBACK": 60
 }
 
 # === POMOCNICZE ===
@@ -540,7 +551,7 @@ class WS:
 
 # === MAIN ===
 if __name__ == "__main__":
-    print("🚀 Start BBOT 5.0")
+    print("🚀 Start BBOT 5.2")
     db = DB()
     exe = Executor(db)
     strat = Strategy(exe)
