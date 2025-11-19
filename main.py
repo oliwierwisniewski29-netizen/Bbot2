@@ -18,8 +18,9 @@ CFG = {
 
     "WINDOW_SECONDS": 10,
     "PCT_THRESHOLD": 30.0,
-    "BUY_ALLOCATION_PERCENT": 0.25,        # ile % salda quote użyć na zakup
-    "CONVERT_FROM_USDC_PERCENT": 0.60,    # ile % salda USDC przekonwertować
+    "BUY_ALLOCATION_PERCENT": 1.0,        # ile % salda quote użyć na zakup
+    "BUY_USDC_PERCENT": 0.20,
+    "CONVERT_FROM_USDC_PERCENT": 0.20,    # ile % salda USDC przekonwertować
     "TP_PERCENT": 7.0,
     "MAX_CONCURRENT_TRADES": 5,
     "PAPER_TRADING": False,
@@ -352,10 +353,15 @@ class Executor:
         # jeśli mało quote, a nie USDC → konwertuj z USDC
         if balance < min_notional and quote != "USDC":
             send_telegram(f"⚠️ Mało {quote}, konwertuję z USDC...")
-            self.convert_from_usdc(quote, CFG["CONVERT_FROM_USDC_PERCENT"])
-            balance = self._get_balance(quote)
+            converted_qty, _ = self.convert_from_usdc(quote, CFG["CONVERT_FROM_USDC_PERCENT"])
+            balance += converted_qty  # dodajemy skonwertowaną ilość do dostępnego salda
 
-        invest = balance * CFG["BUY_ALLOCATION_PERCENT"]
+        # === NOWA LOGIKA: osobny procent dla par z USDC ===
+        if quote == "USDC":
+            invest = balance * CFG.get("BUY_USDC_PERCENT", CFG["BUY_ALLOCATION_PERCENT"])
+        else:
+            invest = balance * CFG["BUY_ALLOCATION_PERCENT"]
+
         if invest < min_notional:
             return
 
@@ -454,14 +460,14 @@ class Strategy:
         if pct <= -abs(CFG["PCT_THRESHOLD"]):
 
             # 🔹🔹🔹 SPRAWDZENIE ŚWIEC 1-DNIOWYCH (czy coin nie jest nowy)
-            daily_candles = self.get_candles(s, interval="1d", limit=CFG.get("MIN_CANDLE_COUNT", 50))
+            daily_candles = self.get_candles(s, interval="1d", limit=CFG.get("MIN_CANDLE_COUNT", 7))
             if len(daily_candles) < CFG.get("MIN_CANDLE_COUNT", 50):
                 print(f"⚠️ {s} ma tylko {len(daily_candles)} świec 1d – zbyt świeża kryptowaluta, pomijam.")
                 return
             # 🔹🔹🔹 KONIEC SPRAWDZANIA ŚWIEC 1-DNIOWYCH
 
             # 🔍 Zmienność liczona ze świec 4h
-            candles_4h = self.get_candles(s, interval="4h", limit=CFG.get("VOLATILITY_LOOKBACK", 50))
+            candles_4h = self.get_candles(s, interval="4h", limit=CFG.get("VOLATILITY_LOOKBACK", 60))
 
             if len(candles_4h) < 5:
                 return
@@ -534,7 +540,7 @@ class WS:
 
 # === MAIN ===
 if __name__ == "__main__":
-    print("🚀 Start BBOT 4.8")
+    print("🚀 Start BBOT 5.0")
     db = DB()
     exe = Executor(db)
     strat = Strategy(exe)
