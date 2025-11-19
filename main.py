@@ -13,9 +13,9 @@ from dotenv import load_dotenv   # <-- TO DODAŁEM
 # === WCZYTANIE ZMIENNYCH ŚRODOWISKOWYCH ===
 load_dotenv()
 
-"BINANCE_API_KEY" = os.getenv("BINANCE_API_KEY")
-"BINANCE_API_SECRET" = os.getenv("BINANCE_API_SECRET")
-"TELEGRAM_BOT_TOKEN" = os.getenv("TELEGRAM_BOT_TOKEN")
+"BINANCE_API_KEY": os.getenv("BINANCE_API_KEY")
+"BINANCE_API_SECRET": os.getenv("BINANCE_API_SECRET")
+"TELEGRAM_BOT_TOKEN": os.getenv("TELEGRAM_BOT_TOKEN")
 
 if not BINANCE_API_KEY or not BINANCE_API_SECRET:
     raise RuntimeError("❌ Brakuje kluczy Binance w .env")
@@ -551,7 +551,7 @@ class WS:
 
 # === MAIN ===
 if __name__ == "__main__":
-    print("🚀 Start BBOT 5.2")
+    print("🚀 Start BBOT 5.3")
     db = DB()
     exe = Executor(db)
     strat = Strategy(exe)
