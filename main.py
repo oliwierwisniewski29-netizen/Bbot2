@@ -16,8 +16,8 @@ CFG = {
     "TELEGRAM_BOT_TOKEN": "7971462955:AAHIqNKqJR38gr5ieC7_n5wafDD5bD-jRHE",
     "ALLOWED_CHAT_IDS": ["7684314138"],
 
-    "WINDOW_SECONDS": 5,
-    "PCT_THRESHOLD": 20.0,
+    "WINDOW_SECONDS": 10,
+    "PCT_THRESHOLD": 30.0,
     "BUY_ALLOCATION_PERCENT": 0.25,        # ile % salda quote użyć na zakup
     "CONVERT_FROM_USDC_PERCENT": 0.60,    # ile % salda USDC przekonwertować
     "TP_PERCENT": 7.0,
@@ -534,7 +534,7 @@ class WS:
 
 # === MAIN ===
 if __name__ == "__main__":
-    print("🚀 Start BBOT 4.7")
+    print("🚀 Start BBOT 4.8")
     db = DB()
     exe = Executor(db)
     strat = Strategy(exe)
