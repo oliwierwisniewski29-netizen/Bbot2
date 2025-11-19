@@ -56,12 +56,20 @@ CFG = {
 }
 
 # === POMOCNICZE ===
-def now_ts(): return int(time.time())
+
+def now_ts():
+    return int(time.time())
+
+
 def safe_float(x):
-    try: return float(x)
-    except: return 0.0
+    try:
+        return float(x)
+    except:
+        return 0.0
+
 
 def send_telegram(text):
+    """Wysyła komunikat do wszystkich chatów — tak samo prosto jak w convert()."""
     for chat in CFG["ALLOWED_CHAT_IDS"]:
         try:
             requests.post(
@@ -70,16 +78,27 @@ def send_telegram(text):
                 timeout=5
             )
         except Exception as e:
-            print("Telegram error:", e)
+            print(f"Telegram error: {e}")
+
 
 def floor_to_step(qty, step):
+    """Tak samo jak convert — metoda odporna, bez wywalania wyjątków."""
     try:
-        if step <= 0: return qty
+        if step <= 0:
+            return qty
         mult = math.floor(qty / step)
         return round(mult * step, 8)
-    except: return qty
+    except:
+        return qty
+
 
 def retry_api(attempts=3, backoff=1.0, allowed_exceptions=(Exception,)):
+    """
+    Spójne z retry w convert():
+    - nie rzuca głupich wyjątków w logach
+    - proste logowanie
+    - backoff taki sam jak w convert_from_usdc
+    """
     def deco(func):
         @wraps(func)
         def wrapper(*args, **kwargs):
@@ -90,9 +109,10 @@ def retry_api(attempts=3, backoff=1.0, allowed_exceptions=(Exception,)):
                 except allowed_exceptions as e:
                     last_exc = e
                     wait = backoff * (2 ** (i - 1))
-                    print(f"[retry] {func.__name__} error: {e} → retry {i}/{attempts} in {wait:.1f}s")
+                    print(f"[retry_api] {func.__name__} error: {e} — retry {i}/{attempts} after {wait:.1f}s")
                     time.sleep(wait)
-            raise last_exc
+            # SPÓJNOŚĆ Z convert: zamiast raise → zwracamy None
+            return None
         return wrapper
     return deco
 
@@ -139,9 +159,14 @@ class Executor:
         self.db = db
         self.q = Queue()
         self.paper = CFG["PAPER_TRADING"]
-        self.client = None if self.paper else Client(CFG["BINANCE_API_KEY"], CFG["BINANCE_API_SECRET"])
+        self.client = None if self.paper else Client(
+            CFG["BINANCE_API_KEY"],
+            CFG["BINANCE_API_SECRET"]
+        )
+
         self.symbol_filters = {}
         self._load_symbol_filters()
+
         self.last_trade_ts = {}
         self.active_symbols = set()
 
@@ -155,28 +180,36 @@ class Executor:
         try:
             if not self.client:
                 return
+
             info = self._api_get_exchange_info()
+
             for s in info["symbols"]:
                 symbol = s["symbol"]
                 min_notional = CFG["MIN_NOTIONAL_DEFAULT"]
                 step_size = 0.000001
+
                 for f in s.get("filters", []):
                     if f["filterType"] == "MIN_NOTIONAL":
                         min_notional = safe_float(f.get("minNotional", min_notional))
                     if f["filterType"] == "LOT_SIZE":
                         step_size = safe_float(f.get("stepSize", step_size))
+
                 self.symbol_filters[symbol] = {
                     "min_notional": min_notional,
                     "step_size": step_size
                 }
+
             print(f"✅ Załadowano {len(self.symbol_filters)} filtrów")
+
         except Exception as e:
             print("Błąd filtrów:", e)
 
     # === BALANSE ===
     def _get_balance(self, asset):
         if self.paper:
+            # symulacja papierowa: masz zawsze 100 USDC
             return 100.0 if asset == "USDC" else 0.0
+
         try:
             bal = self.client.get_asset_balance(asset)
             return safe_float(bal.get("free", 0))
@@ -184,38 +217,51 @@ class Executor:
             print("Balance error:", e)
             return 0.0
 
-    # === ENQUEUE (NAPRAWA BŁĘDU) ===
+    # === POPRAWIONE ENQUEUE ===
     def enqueue(self, sig):
-        """Dodaje sygnał do kolejki (np. z Strategy.on_tick)"""
+        """
+        Dodaje sygnał do kolejki z innych modułów (np. Strategy.on_tick).
+        """
         self.q.put(sig)
 
-    # === NOWA FUNKCJA KONWERSJI ===
-    def convert_from_usdc(self, target: str, convert_percent: float):
-        try:
-            usdc_bal = self._get_balance("USDC")
-            if usdc_bal <= 0:
-                send_telegram("❌ Brak środków USDC do konwersji.")
-                return 0.0, 0.0
+    # === FUNKCJA KONWERSJI ===
+def convert_from_usdc(self, target: str, convert_percent: float):
+    try:
+        usdc_bal = self._get_balance("USDC")
+        if usdc_bal <= 0:
+            send_telegram("❌ Brak środków USDC do konwersji.")
+            return 0.0, 0.0
 
-            amount_usdc = usdc_bal * float(convert_percent)
-            if amount_usdc <= 0:
-                send_telegram("⚠️ Nieprawidłowy procent konwersji (0%).")
-                return 0.0, 0.0
+        amount_usdc = usdc_bal * float(convert_percent)
+        if amount_usdc <= 0:
+            send_telegram("⚠️ Nieprawidłowy procent konwersji (0%).")
+            return 0.0, 0.0
 
-            min_notional = CFG["MIN_NOTIONALS"].get("USDC", 5.0)
-            if amount_usdc < min_notional:
-                send_telegram(f"⚠️ Kwota {amount_usdc:.2f} USDC < minimalna {min_notional} USDC.")
-                return 0.0, 0.0
+        min_notional = CFG["MIN_NOTIONALS"].get("USDC", 5.0)
+        if amount_usdc < min_notional:
+            send_telegram(f"⚠️ Kwota {amount_usdc:.2f} USDC < minimalna {min_notional} USDC.")
+            return 0.0, 0.0
 
-            pair = f"{target}USDC"
+        # --- TU NOWY KOD ---
+        possible_pairs = [
+            f"{target}USDC",
+            f"{target}USDT",
+            f"{target}TRY"
+        ]
 
-            # ==== NAJWAŻNIEJSZA POPRAWKA ====
-            if pair not in self.symbol_filters:
-                send_telegram(f"⚠️ Para {pair} nie istnieje – pomijam.")
-                return 0.0, 0.0
-            # =================================
+        pair = None
+        for p in possible_pairs:
+            if p in self.symbol_filters:
+                pair = p
+                break
 
-            send_telegram(f"🔄 Konwertuję {amount_usdc:.2f} USDC → {target} (para {pair})...")
+        if not pair:
+            send_telegram(f"❌ Brak działającej pary dla {target} (USDC/USDT/TRY)")
+            return 0.0, 0.0
+
+        # dopiero teraz to:
+        send_telegram(f"🔄 Konwertuję {amount_usdc:.2f} USDC → {target} (para {pair})...")
+
 
             attempts = CFG.get("API_RETRY_ATTEMPTS", 3)
             backoff = CFG.get("API_RETRY_BACKOFF", 2)
@@ -489,7 +535,7 @@ class WS:
 
 # === MAIN ===
 if __name__ == "__main__":
-    print("🚀 Start BBOT 4.2")
+    print("🚀 Start BBOT 4.3")
     db = DB()
     exe = Executor(db)
     strat = Strategy(exe)
