@@ -16,7 +16,7 @@ load_dotenv()
 if not "BINANCE_API_KEY" or not "BINANCE_API_SECRET":
     raise RuntimeError("❌ Brakuje kluczy Binance w .env")
 
-if not TELEGRAM_BOT_TOKEN:
+if not "TELEGRAM_BOT_TOKEN":
     raise RuntimeError("❌ Brakuje TELEGRAM_BOT_TOKEN w .env")
 
 # === KONFIGURACJA ===
