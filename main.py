@@ -290,9 +290,9 @@ def convert_from_usdc(self, target: str, convert_percent: float):
         send_telegram(f"❌ Błąd konwersji {pair}: {last_exc}")
         return 0.0, 0.0
 
-        except Exception as e:
-            send_telegram(f"❌ Wyjątek konwersji USDC→{target}: {e}")
-            return 0.0, 0.0
+    except Exception as e:
+        send_telegram(f"❌ Wyjątek konwersji USDC→{target}: {e}")
+        return 0.0, 0.0
 
     # === SPRZEDAŻ I KUPNO ===
     def sell_all_position(self, symbol):
@@ -534,7 +534,7 @@ class WS:
 
 # === MAIN ===
 if __name__ == "__main__":
-    print("🚀 Start BBOT 4.4")
+    print("🚀 Start BBOT 4.5")
     db = DB()
     exe = Executor(db)
     strat = Strategy(exe)
