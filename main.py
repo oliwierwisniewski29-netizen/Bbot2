@@ -18,8 +18,8 @@ CFG = {
 
     "WINDOW_SECONDS": 5,
     "PCT_THRESHOLD": 20.0,
-    "BUY_ALLOCATION_PERCENT": 1.0,        # ile % salda quote użyć na zakup
-    "CONVERT_FROM_USDC_PERCENT": 0.70,    # ile % salda USDC przekonwertować
+    "BUY_ALLOCATION_PERCENT": 0.25,        # ile % salda quote użyć na zakup
+    "CONVERT_FROM_USDC_PERCENT": 0.60,    # ile % salda USDC przekonwertować
     "TP_PERCENT": 7.0,
     "MAX_CONCURRENT_TRADES": 5,
     "PAPER_TRADING": False,
@@ -534,7 +534,7 @@ class WS:
 
 # === MAIN ===
 if __name__ == "__main__":
-    print("🚀 Start BBOT 4.6")
+    print("🚀 Start BBOT 4.7")
     db = DB()
     exe = Executor(db)
     strat = Strategy(exe)
