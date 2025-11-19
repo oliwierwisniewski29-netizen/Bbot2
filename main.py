@@ -13,8 +13,8 @@ from dotenv import load_dotenv   # <-- TO DODAŁEM
 # === WCZYTANIE ZMIENNYCH ŚRODOWISKOWYCH ===
 load_dotenv()
 
-"BINANCE_API_KEY": os.getenv("BINANCE_API_KEY")
-"BINANCE_API_SECRET": os.getenv("BINANCE_API_SECRET")
+"BINANCE_API_KEY": os.getenv("BINANCE_API_KEY"),
+"BINANCE_API_SECRET": os.getenv("BINANCE_API_SECRET"),
 "TELEGRAM_BOT_TOKEN": os.getenv("TELEGRAM_BOT_TOKEN")
 
 if not BINANCE_API_KEY or not BINANCE_API_SECRET:
