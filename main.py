@@ -196,6 +196,11 @@ class Executor:
 
             for s in info["symbols"]:
                 symbol = s["symbol"]
+
+                # ❌ Odrzucamy pary typu BTC/TRY, ETH/TRY itd.
+                if symbol.endswith("TRY") or symbol.startswith("TRY"):
+                    continue
+
                 min_notional = CFG["MIN_NOTIONAL_DEFAULT"]
                 step_size = 0.000001
 
@@ -550,7 +555,7 @@ class WS:
 
 # === MAIN ===
 if __name__ == "__main__":
-    print("🚀 Start BBOT 5.4")
+    print("🚀 Start BBOT 5.5")
     db = DB()
     exe = Executor(db)
     strat = Strategy(exe)
