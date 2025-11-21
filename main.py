@@ -1,7 +1,7 @@
 # === BBOT 3.0 - Auto USDC→target + smart buy protection ===
 import os, json, threading, time, asyncio, requests, sqlite3, math
 from collections import defaultdict, deque
-from queue import Queue
+from queue import PriorityQueue
 from decimal import Decimal
 from websocket import WebSocketApp
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
@@ -26,7 +26,7 @@ CFG = {
     "TELEGRAM_BOT_TOKEN": os.getenv("TELEGRAM_BOT_TOKEN"),
     "ALLOWED_CHAT_IDS": ["7684314138"],
 
-    "WINDOW_SECONDS": 10,
+    "WINDOW_SECONDS": 5,
     "PCT_THRESHOLD": 30.0,
     "BUY_ALLOCATION_PERCENT": 1.0,
     "BUY_USDC_PERCENT": 0.20,
@@ -168,7 +168,7 @@ class DB:
 class Executor:
     def __init__(self, db: DB):
         self.db = db
-        self.q = Queue()
+        self.q = PriorityQueue()
         self.paper = CFG["PAPER_TRADING"]
         self.client = None if self.paper else Client(
             CFG["BINANCE_API_KEY"],
@@ -235,10 +235,8 @@ class Executor:
 
     # === POPRAWIONE ENQUEUE ===
     def enqueue(self, sig):
-        """
-        Dodaje sygnał do kolejki z innych modułów (np. Strategy.on_tick).
-        """
-        self.q.put(sig)
+        pct = abs(sig.get("percent", 0))
+        self.q.put((-pct, sig))   # większy spadek = wyższy priorytet (czyli mniejsza wartość)
 
     # === FUNKCJA KONWERSJI ===
     def convert_from_usdc(self, target: str, convert_percent: float):
@@ -415,7 +413,7 @@ class Executor:
 
     def worker(self):
         while True:
-            sig = self.q.get()
+            _, sig = self.q.get()
             try:
                 self._buy(sig["symbol"], sig["price"])
             except Exception as e:
@@ -426,6 +424,7 @@ class Executor:
 class Strategy:
     def __init__(self, executor):
         self.executor = executor
+        self.q = executor.q
         self.price_hist = defaultdict(lambda: deque(maxlen=200))
         self.candle_cache = {}
 
@@ -470,6 +469,14 @@ class Strategy:
             return
 
         pct = (p - old) / old * 100
+
+        if pct <= -CFG["PCT_THRESHOLD"]:
+            # wysyłamy sygnał do workera Z PROCENTEM
+            self.q.put({
+                "symbol": s,
+                "price": p,
+                "pct": pct
+            })
 
         # sprawdzamy tylko potencjalne spadki
         if pct <= -abs(CFG["PCT_THRESHOLD"]):
@@ -555,7 +562,7 @@ class WS:
 
 # === MAIN ===
 if __name__ == "__main__":
-    print("🚀 Start BBOT 5.5")
+    print("🚀 Start BBOT 5.6")
     db = DB()
     exe = Executor(db)
     strat = Strategy(exe)
