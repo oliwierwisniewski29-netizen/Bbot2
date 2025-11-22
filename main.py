@@ -13,6 +13,10 @@ from dotenv import load_dotenv   # <-- TO DODAŁEM
 # === WCZYTANIE ZMIENNYCH ŚRODOWISKOWYCH ===
 load_dotenv()
 
+BINANCE_API_KEY = os.getenv("BINANCE_API_KEY")
+BINANCE_API_SECRET = os.getenv("BINANCE_API_SECRET")
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+
 if not "BINANCE_API_KEY" or not "BINANCE_API_SECRET":
     raise RuntimeError("❌ Brakuje kluczy Binance w .env")
 
@@ -235,8 +239,24 @@ class Executor:
 
     # === POPRAWIONE ENQUEUE ===
     def enqueue(self, sig):
-        pct = abs(sig.get("percent", 0))
-        self.q.put((-pct, sig))   # większy spadek = wyższy priorytet (czyli mniejsza wartość)
+        """
+        Sig powinien być dict z polami: 'symbol', 'price' oraz 'pct' (lub 'percent').
+        Wrzucamy do PriorityQueue jako (priority, sig) - większy spadek = wyższy priorytet.
+        """
+        if not isinstance(sig, dict):
+            print("⚠️ enqueue: niepoprawny sygnał (nie dict):", sig)
+            return
+
+        # obsłużymy oba klucze nazwy procentu dla kompatybilności
+        pct = sig.get("pct", sig.get("percent", 0))
+        try:
+            pct = abs(float(pct))
+        except Exception:
+            pct = 0.0
+
+        # PriorityQueue sortuje rosnąco — chcemy większy spadek = wyższy priorytet
+        priority = -pct
+        self.q.put((priority, sig))
 
     # === FUNKCJA KONWERSJI ===
     def convert_from_usdc(self, target: str, convert_percent: float):
@@ -413,7 +433,15 @@ class Executor:
 
     def worker(self):
         while True:
-            _, sig = self.q.get()
+            item = self.q.get()
+
+            # sanity check
+            if not isinstance(item, tuple) or len(item) != 2:
+                print("❌ Zły format sygnału:", item)
+                continue
+
+            _, sig = item
+   
             try:
                 self._buy(sig["symbol"], sig["price"])
             except Exception as e:
@@ -472,11 +500,14 @@ class Strategy:
 
         if pct <= -CFG["PCT_THRESHOLD"]:
             # wysyłamy sygnał do workera Z PROCENTEM
-            self.q.put({
-                "symbol": s,
-                "price": p,
-                "pct": pct
-            })
+            self.q.put((
+                "signal",
+                {
+                    "symbol": s,
+                    "price": p,
+                    "pct": pct
+                }
+            ))
 
         # sprawdzamy tylko potencjalne spadki
         if pct <= -abs(CFG["PCT_THRESHOLD"]):
@@ -562,7 +593,7 @@ class WS:
 
 # === MAIN ===
 if __name__ == "__main__":
-    print("🚀 Start BBOT 5.6")
+    print("🚀 Start BBOT 5.7")
     db = DB()
     exe = Executor(db)
     strat = Strategy(exe)
