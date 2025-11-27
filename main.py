@@ -47,7 +47,6 @@ CFG = {
         "USDC": 5.0,
         "BNB": 0.01,
         "BTC": 0.0001,
-        "TRY": 10.0,
         "ETH": 0.001,
         "EUR": 5.0,
         "XRP": 10.0,
@@ -435,13 +434,17 @@ class Executor:
         while True:
             item = self.q.get()
 
-            # sanity check
+            # Bezpieczne rozpakowanie
             if not isinstance(item, tuple) or len(item) != 2:
-                print("❌ Zły format sygnału:", item)
+                print("❌ Kolejka dostała zły format:", item)
+                continue
+        
+            tag, sig = item
+
+            if tag != "signal":
+                print("⚠️ Nieznany tag:", tag)
                 continue
 
-            _, sig = item
-   
             try:
                 self._buy(sig["symbol"], sig["price"])
             except Exception as e:
@@ -483,6 +486,9 @@ class Strategy:
         if not s or p <= 0:
             return
 
+        if s.endswith("TRY") or s.startswith("TRY"):
+            return
+
         dq = self.price_hist[s]
         dq.append((ts, p))
 
@@ -499,7 +505,6 @@ class Strategy:
         pct = (p - old) / old * 100
 
         if pct <= -CFG["PCT_THRESHOLD"]:
-            # wysyłamy sygnał do workera Z PROCENTEM
             self.q.put((
                 "signal",
                 {
@@ -593,7 +598,7 @@ class WS:
 
 # === MAIN ===
 if __name__ == "__main__":
-    print("🚀 Start BBOT 5.7")
+    print("🚀 Start BBOT 5.8")
     db = DB()
     exe = Executor(db)
     strat = Strategy(exe)
