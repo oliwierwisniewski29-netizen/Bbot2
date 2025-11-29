@@ -2,7 +2,7 @@
 import os, json, threading, time, asyncio, requests, sqlite3, math
 from collections import defaultdict, deque
 from queue import PriorityQueue
-from decimal import Decimal
+from decimal import Decimal, ROUND_DOWN
 from websocket import WebSocketApp
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from telegram import Update
@@ -96,15 +96,14 @@ def send_telegram(text):
 
 
 def floor_to_step(qty, step):
-    """Tak samo jak convert — metoda odporna, bez wywalania wyjątków."""
+    """Zaokrąglenie w dół do kroku zgodnego z Binance, bez błędów precyzji."""
     try:
-        if step <= 0:
-            return qty
-        mult = math.floor(qty / step)
-        return round(mult * step, 8)
+        qty_d = Decimal(str(qty))
+        step_d = Decimal(str(step))
+        mult = qty_d // step_d
+        return float((mult * step_d).quantize(step_d, rounding=ROUND_DOWN))
     except:
         return qty
-
 
 def retry_api(attempts=3, backoff=1.0, allowed_exceptions=(Exception,)):
     """
@@ -302,6 +301,10 @@ class Executor:
             for i in range(1, attempts + 1):
                 try:
                     if not self.paper:
+                        info = self.symbol_filters.get(pair, {"step_size": 0.01})
+                        step = info.get("step_size", 0.01)
+                        amount_usdc = floor_to_step(amount_usdc, step)
+
                         order = self.client.order_market_buy(
                             symbol=pair,
                             quoteOrderQty=str(amount_usdc)
@@ -399,8 +402,6 @@ class Executor:
 
         self.active_symbols.add(symbol)
         try:
-            quote_qty = round(invest, 8)
-
             if self.paper:
                 qty = quote_qty / price
                 self.db.insert_pos(symbol, qty, price)
@@ -415,8 +416,11 @@ class Executor:
                     send_telegram(f"⚠️ Kwota {invest:.2f} < minimalna {min_notional:.2f}, pomijam zakup {symbol}")
                     return
 
-                invest = math.floor(invest / step) * step
-                quote_qty = round(invest, 8)
+                quote_qty = floor_to_step(invest, step)
+                
+                if quote_qty <= 0:
+                    send_telegram(f"⚠️ Ilość po zaokrągleniu = 0, pomijam zakup {symbol}")
+                    return
 
                 order = self.client.order_market_buy(symbol=symbol, quoteOrderQty=str(quote_qty))
                 qty = safe_float(order.get("executedQty"))
@@ -598,7 +602,7 @@ class WS:
 
 # === MAIN ===
 if __name__ == "__main__":
-    print("🚀 Start BBOT 5.8")
+    print("🚀 Start BBOT 5.9")
     db = DB()
     exe = Executor(db)
     strat = Strategy(exe)
