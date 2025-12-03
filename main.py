@@ -603,7 +603,7 @@ class WS:
         except Exception as e:
             print("ws err:", e)
     
-    def on_error(self, ws,error)
+    def on_error(self, ws, error):
         print("WS ERROR:", error)
 
     def on_close(self, ws, code, msg):
@@ -633,7 +633,7 @@ class WS:
 
 # === MAIN ===
 if __name__ == "__main__":
-    print("Start BBOT 6.1")
+    print("Start BBOT 6.2")
     db = DB()
     exe = Executor(db)
     strat = Strategy(exe)
