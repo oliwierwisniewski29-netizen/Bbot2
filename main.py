@@ -620,7 +620,7 @@ class WS:
               ws = WebSocketApp(
                   "wss://stream.binance.com:9443/ws/!miniTicker@arr",
                   on_message=self.on_msg,
-                  on_error=elf.on_error,
+                  on_error=self.on_error,
                   on_close=self.on_close,
                   on_open=self.on_open
               )
@@ -633,7 +633,7 @@ class WS:
 
 # === MAIN ===
 if __name__ == "__main__":
-    print("Start BBOT 6.2")
+    print("Start BBOT 6.3")
     db = DB()
     exe = Executor(db)
     strat = Strategy(exe)
