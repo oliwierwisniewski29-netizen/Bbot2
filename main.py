@@ -8,7 +8,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from telegram import Update
 from binance.client import Client
 from functools import wraps
-from dotenv import load_dotenv   # <-- TO DODAŁEM
+from dotenv import load_dotenv
 
 # === WCZYTANIE ZMIENNYCH ŚRODOWISKOWYCH ===
 load_dotenv()
@@ -19,10 +19,10 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
 # sprawdź faktyczne wartości
 if not BINANCE_API_KEY or not BINANCE_API_SECRET:
-    raise RuntimeError("❌ Brakuje kluczy Binance w .env (BINANCE_API_KEY / BINANCE_API_SECRET)")
+    raise RuntimeError("Brakuje kluczy Binance w .env (BINANCE_API_KEY / BINANCE_API_SECRET)")
 
 if not TELEGRAM_BOT_TOKEN:
-    raise RuntimeError("❌ Brakuje TELEGRAM_BOT_TOKEN w .env")
+    raise RuntimeError("Brakuje TELEGRAM_BOT_TOKEN w .env")
 
 # === KONFIGURACJA ===
 CFG = {
@@ -200,7 +200,6 @@ class Executor:
             for s in info["symbols"]:
                 symbol = s["symbol"]
 
-                # ❌ Odrzucamy pary typu BTC/TRY, ETH/TRY itd.
                 sym_u = symbol.strip().upper()
                 if sym_u.endswith("TRY"):
                     continue
@@ -218,8 +217,8 @@ class Executor:
                     "min_notional": min_notional,
                     "step_size": step_size
                 }
-
-            print(f"✅ Załadowano {len(self.symbol_filters)} filtrów")
+ 
+            print(f"Załadowano {len(self.symbol_filters)} filtrów")
 
         except Exception as e:
             print("Błąd filtrów:", e)
@@ -244,7 +243,7 @@ class Executor:
         Wrzucamy do PriorityQueue jako (priority, sig) - większy spadek = wyższy priorytet.
         """
         if not isinstance(sig, dict):
-            print("⚠️ enqueue: niepoprawny sygnał (nie dict):", sig)
+            print("enqueue: niepoprawny sygnał (nie dict):", sig)
             return
 
         # obsłużymy oba klucze nazwy procentu dla kompatybilności
@@ -263,17 +262,17 @@ class Executor:
         try:
             usdc_bal = self._get_balance("USDC")
             if usdc_bal <= 0:
-                send_telegram("❌ Brak środków USDC do konwersji.")
+                send_telegram("Brak środków USDC do konwersji.")
                 return 0.0, 0.0
 
             amount_usdc = usdc_bal * float(convert_percent)
             if amount_usdc <= 0:
-                send_telegram("⚠️ Nieprawidłowy procent konwersji (0%).")
+                send_telegram("Nieprawidłowy procent konwersji (0%).")
                 return 0.0, 0.0
 
             min_notional = CFG["MIN_NOTIONALS"].get("USDC", 5.0)
             if amount_usdc < min_notional:
-                send_telegram(f"⚠️ Kwota {amount_usdc:.2f} USDC < minimalna {min_notional} USDC.")
+                send_telegram(f"Kwota {amount_usdc:.2f} USDC < minimalna {min_notional} USDC.")
                 return 0.0, 0.0
 
             possible_pairs = [
@@ -288,11 +287,11 @@ class Executor:
                     break
 
             if not pair:
-                send_telegram(f"❌ Brak działającej pary dla {target} (USDC/USDT/TRY)")
+                send_telegram(f"Brak działającej pary dla {target} (USDC/USDT/TRY)")
                 return 0.0, 0.0
 
             # dopiero teraz to:
-            send_telegram(f"🔄 Konwertuję {amount_usdc:.2f} USDC → {target} (para {pair})...")
+            send_telegram(f"Konwertuję {amount_usdc:.2f} USDC → {target} (para {pair})...")
 
 
             attempts = CFG.get("API_RETRY_ATTEMPTS", 3)
@@ -317,7 +316,7 @@ class Executor:
                         step = self.symbol_filters.get(pair, {}).get("step_size", 0.000001)
                         executed_qty = floor_to_step(executed_qty, step)
 
-                        send_telegram(f"✅ Skonwertowano {quote_amount:.2f} USDC → {executed_qty:.8f} {target}")
+                        send_telegram(f"Skonwertowano {quote_amount:.2f} USDC → {executed_qty:.8f} {target}")
                         return executed_qty, quote_amount
 
                         order = self.client.order_market_buy(
@@ -327,7 +326,7 @@ class Executor:
                         executed_qty = safe_float(order.get("executedQty")) or sum(
                             safe_float(f.get("qty", 0)) for f in order.get('fills', [])
                         )
-                        send_telegram(f"✅ Skonwertowano {amount_usdc:.2f} USDC → {executed_qty:.8f} {target}")
+                        send_telegram(f"Skonwertowano {amount_usdc:.2f} USDC → {executed_qty:.8f} {target}")
                         return executed_qty, amount_usdc
                     else:
                         send_telegram(f"[PAPER] Symulacja konwersji {amount_usdc:.2f} USDC → {target}")
@@ -338,33 +337,33 @@ class Executor:
                     print(f"[convert retry] {pair} error: {e} — retry {i}/{attempts} after {wait:.1f}s")
                     time.sleep(wait)
 
-            send_telegram(f"❌ Błąd konwersji {pair}: {last_exc}")
+            send_telegram(f"Błąd konwersji {pair}: {last_exc}")
             return 0.0, 0.0
 
         except Exception as e:
-            send_telegram(f"❌ Wyjątek konwersji USDC→{target}: {e}")
+            send_telegram(f"Wyjątek konwersji USDC→{target}: {e}")
             return 0.0, 0.0
 
     # === SPRZEDAŻ I KUPNO ===
     def sell_all_position(self, symbol):
         try:
             if not self.db.has_open_position(symbol):
-                send_telegram(f"⚠️ Brak otwartej pozycji {symbol}.")
+                send_telegram(f"Brak otwartej pozycji {symbol}.")
                 return
 
             quote = next((q for q in CFG["MIN_NOTIONALS"].keys() if symbol.endswith(q)), None)
             if not quote:
-                send_telegram(f"❌ Nie rozpoznano quote dla {symbol}")
+                send_telegram(f"Nie rozpoznano quote dla {symbol}")
                 return
 
             base = symbol[:-len(quote)]
             qty = self._get_balance(base)
             if qty <= 0:
-                send_telegram(f"❌ Brak {base} do sprzedaży.")
+                send_telegram(f"Brak {base} do sprzedaży.")
                 self.db.close_position(symbol)
                 return
 
-            send_telegram(f"🔴 Sprzedaję {qty:.8f} {base} ({symbol})...")
+            send_telegram(f"Sprzedaję {qty:.8f} {base} ({symbol})...")
             if self.paper:
                 send_telegram(f"[PAPER] Sprzedano {qty:.8f} {base}")
                 self.db.close_position(symbol)
@@ -374,15 +373,15 @@ class Executor:
             step = info.get("step_size", 0.000001)
             qty_to_sell = floor_to_step(qty, step)
             if qty_to_sell <= 0:
-                send_telegram("⚠️ Ilość po zaokrągleniu = 0, pomijam.")
+                send_telegram("Ilość po zaokrągleniu = 0, pomijam.")
                 return
 
             order = self.client.order_market_sell(symbol=symbol, quantity=str(qty_to_sell))
             avg_price = safe_float(order["fills"][0]["price"]) if order.get("fills") else 0.0
-            send_telegram(f"✅ Sprzedano {qty_to_sell:.8f} {base} @ {avg_price}")
+            send_telegram(f"Sprzedano {qty_to_sell:.8f} {base} @ {avg_price}")
             self.db.close_position(symbol)
         except Exception as e:
-            send_telegram(f"❌ Błąd sprzedaży {symbol}: {e}")
+            send_telegram(f"Błąd sprzedaży {symbol}: {e}")
 
     def _buy(self, symbol, price):
         if self.db.has_open_position(symbol) or symbol in self.active_symbols:
@@ -392,7 +391,7 @@ class Executor:
 
         quote = next((q for q in CFG["MIN_NOTIONALS"].keys() if symbol.endswith(q)), None)
         if not quote:
-            print(f"❓ Nie rozpoznano quote: {symbol}")
+            print(f"Nie rozpoznano quote: {symbol}")
             return
 
         info = self.symbol_filters.get(symbol, {})
@@ -402,7 +401,7 @@ class Executor:
 
         # jeśli mało quote, a nie USDC → konwertuj z USDC
         if balance < min_notional and quote != "USDC":
-            send_telegram(f"⚠️ Mało {quote}, konwertuję z USDC...")
+            send_telegram(f"Mało {quote}, konwertuję z USDC...")
             converted_qty, _ = self.convert_from_usdc(quote, CFG["CONVERT_FROM_USDC_PERCENT"])
             balance += converted_qty  # dodajemy skonwertowaną ilość do dostępnego salda
 
@@ -428,23 +427,23 @@ class Executor:
                 min_notional = info.get("min_notional", 5.0)
 
                 if invest < min_notional:
-                    send_telegram(f"⚠️ Kwota {invest:.2f} < minimalna {min_notional:.2f}, pomijam zakup {symbol}")
+                    send_telegram(f"Kwota {invest:.2f} < minimalna {min_notional:.2f}, pomijam zakup {symbol}")
                     return
 
                 quote_qty = floor_to_step(invest, step)
                 
                 if quote_qty <= 0:
-                    send_telegram(f"⚠️ Ilość po zaokrągleniu = 0, pomijam zakup {symbol}")
+                    send_telegram(f"Ilość po zaokrągleniu = 0, pomijam zakup {symbol}")
                     return
 
                 order = self.client.order_market_buy(symbol=symbol, quoteOrderQty=str(quote_qty))
                 qty = safe_float(order.get("executedQty"))
                 avg = safe_float(order["fills"][0]["price"]) if order.get("fills") else price
                 self.db.insert_pos(symbol, qty, avg)
-                send_telegram(f"🟢 KUPNO {symbol}: {qty:.8f} @ {avg:.4f}")
+                send_telegram(f"KUPNO {symbol}: {qty:.8f} @ {avg:.4f}")
 
         except Exception as e:
-            send_telegram(f"❌ Błąd kupna {symbol}: {e}")
+            send_telegram(f"Błąd kupna {symbol}: {e}")
         finally:
             self.last_trade_ts[symbol] = time.time()
             self.active_symbols.discard(symbol)
@@ -455,14 +454,14 @@ class Executor:
 
             # oczekujemy (priority, sig)
             if not isinstance(item, tuple) or len(item) != 2:
-                print("❌ Kolejka dostała zły format:", item)
+                print("Kolejka dostała zły format:", item)
                 continue
 
             priority, sig = item
 
             # sig powinien być dict z kluczami symbol, price
             if not isinstance(sig, dict):
-                print("❌ Niepoprawny sygnał w kolejce:", sig)
+                print("Niepoprawny sygnał w kolejce:", sig)
                 continue
 
             try:
@@ -496,7 +495,7 @@ class Strategy:
             self.candle_cache[symbol] = {"data": closes, "ts": now}
             return closes
         except Exception as e:
-            print(f"⚠️ Błąd pobierania świec {interval} dla {symbol}: {e}")
+            print(f"Błąd pobierania świec {interval} dla {symbol}: {e}")
             return []
 
     def on_tick(self, entry, ts):
@@ -534,14 +533,14 @@ class Strategy:
         # sprawdzamy tylko potencjalne spadki
         if pct <= -abs(CFG["PCT_THRESHOLD"]):
 
-            # 🔹🔹🔹 SPRAWDZENIE ŚWIEC 1-DNIOWYCH (czy coin nie jest nowy)
+            # SPRAWDZENIE ŚWIEC 1-DNIOWYCH (czy coin nie jest nowy)
             daily_candles = self.get_candles(s, interval="1d", limit=CFG.get("MIN_CANDLE_COUNT", 7))
             if len(daily_candles) < CFG.get("MIN_CANDLE_COUNT", 50):
-                print(f"⚠️ {s} ma tylko {len(daily_candles)} świec 1d – zbyt świeża kryptowaluta, pomijam.")
+                print(f"{s} ma tylko {len(daily_candles)} świec 1d – zbyt świeża kryptowaluta, pomijam.")
                 return
-            # 🔹🔹🔹 KONIEC SPRAWDZANIA ŚWIEC 1-DNIOWYCH
+            #  KONIEC SPRAWDZANIA ŚWIEC 1-DNIOWYCH
 
-            # 🔍 Zmienność liczona ze świec 4h
+            # Zmienność liczona ze świec 4h
             candles_4h = self.get_candles(s, interval="4h", limit=CFG.get("VOLATILITY_LOOKBACK", 60))
 
             if len(candles_4h) < 5:
@@ -552,13 +551,13 @@ class Strategy:
 
             if volatility >= CFG["MIN_VOLATILITY_PERCENT"]:
                 if s.endswith("USDT"):
-                    print(f"⏭️ Pomijam {s} (para w USDT, mimo że spełnia warunki)")
+                    print(f"Pomijam {s} (para w USDT, mimo że spełnia warunki)")
                     return
 
-                print(f"💥 Spadek {s}: {pct:.2f}% | Zmienność (4h): {volatility:.1f}% ≥ {CFG['MIN_VOLATILITY_PERCENT']}% → kupuję")
+                print(f"Spadek {s}: {pct:.2f}% | Zmienność (4h): {volatility:.1f}% ≥ {CFG['MIN_VOLATILITY_PERCENT']}% → kupuję")
                 self.executor.enqueue({"symbol": s, "price": p})
             else:
-                print(f"⚠️ Pomijam {s}: spadek {pct:.2f}%, ale zmienność (4h) {volatility:.1f}% < {CFG['MIN_VOLATILITY_PERCENT']}%")
+                print(f"Pomijam {s}: spadek {pct:.2f}%, ale zmienność (4h) {volatility:.1f}% < {CFG['MIN_VOLATILITY_PERCENT']}%")
 
 # === TELEGRAM ===
 class TelegramBot:
@@ -571,21 +570,21 @@ class TelegramBot:
         self.app.add_handler(CommandHandler("sellall", self.sellall))
 
     async def start(self, u: Update, c: ContextTypes.DEFAULT_TYPE):
-        await u.message.reply_text("🤖 Bot działa!")
+        await u.message.reply_text("Bot działa!")
 
     async def status(self, u: Update, c: ContextTypes.DEFAULT_TYPE):
         rows = self.db.conn.execute("SELECT symbol,qty,avg_price FROM positions WHERE status='OPEN'").fetchall()
-        msg = f"📊 Otwarte pozycje: {len(rows)}\n" + "\n".join(f"{r[0]} {r[1]} @ {r[2]}" for r in rows)
+        msg = f"Otwarte pozycje: {len(rows)}\n" + "\n".join(f"{r[0]} {r[1]} @ {r[2]}" for r in rows)
         await u.message.reply_text(msg or "Brak otwartych pozycji.")
 
     async def sellall(self, u: Update, c: ContextTypes.DEFAULT_TYPE):
         args = u.message.text.split()
         if len(args) < 2:
-            await u.message.reply_text("⚠️ Użycie: /sellall SYMBOL (np. /sellall MMTBNB)")
+            await u.message.reply_text("Użycie: /sellall SYMBOL (np. /sellall MMTBNB)")
             return
         symbol = args[1].upper()
         threading.Thread(target=self.executor.sell_all_position, args=(symbol,), daemon=True).start()
-        await u.message.reply_text(f"🚀 Rozpoczynam sprzedaż {symbol}...")
+        await u.message.reply_text(f"Rozpoczynam sprzedaż {symbol}...")
 
     def run(self):
         self.app.run_polling()
@@ -603,19 +602,38 @@ class WS:
                 self.strat.on_tick(e, ts)
         except Exception as e:
             print("ws err:", e)
+    
+    def on_error(self, ws,error)
+        print("WS ERROR:", error)
+
+    def on_close(self, ws, code, msg):
+        print(f"WS CLOSED: code={code}, msg={msg}")
+    
+    def on_open(self, ws): 
+        print("WS OPEN")
 
     def run(self):
         while True:
-            try:
-                ws = WebSocketApp("wss://stream.binance.com:9443/ws/!miniTicker@arr", on_message=self.on_msg)
-                ws.run_forever()
-            except Exception as e:
-                print("ws error:", e)
-                time.sleep(3)
+          try:
+              print("Look OK - checking conditions...")
+
+              ws = WebSocketApp(
+                  "wss://stream.binance.com:9443/ws/!miniTicker@arr",
+                  on_message=self.on_msg,
+                  on_error=elf.on_error,
+                  on_close=self.on_close,
+                  on_open=self.on_open
+              )
+
+              ws.run_forever()
+
+          except Exception as e:
+              print("Exception in WS look:", e)
+              time.sleep(3)
 
 # === MAIN ===
 if __name__ == "__main__":
-    print("🚀 Start BBOT 6.0")
+    print("Start BBOT 6.1")
     db = DB()
     exe = Executor(db)
     strat = Strategy(exe)
