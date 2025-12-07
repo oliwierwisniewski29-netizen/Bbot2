@@ -184,6 +184,8 @@ class Executor:
         self.last_trade_ts = {}
         self.active_symbols = set()
 
+        self._pq_counter = 0
+
     # === API ===
     @retry_api()
     def _api_get_exchange_info(self):
@@ -253,9 +255,10 @@ class Executor:
         except Exception:
             pct = 0.0
 
-        # PriorityQueue sortuje rosnąco — chcemy większy spadek = wyższy priorytet
         priority = -pct
-        self.q.put((priority, sig))
+
+        self._pq_counter += 1
+        self.q.put((priority, self._pq_counter, sig))
 
     # === FUNKCJA KONWERSJI ===
     def convert_from_usdc(self, target: str, convert_percent: float):
@@ -277,7 +280,9 @@ class Executor:
 
             possible_pairs = [
                 f"{target}USDC",
-                f"{target}USDT"
+                f"{target}USDT",
+                f"USDC{target}",  
+                f"USDT{target}"
             ]
 
             pair = None
@@ -318,16 +323,6 @@ class Executor:
 
                         send_telegram(f"Skonwertowano {quote_amount:.2f} USDC → {executed_qty:.8f} {target}")
                         return executed_qty, quote_amount
-
-                        order = self.client.order_market_buy(
-                            symbol=pair,
-                            quoteOrderQty=str(amount_usdc)
-                        )
-                        executed_qty = safe_float(order.get("executedQty")) or sum(
-                            safe_float(f.get("qty", 0)) for f in order.get('fills', [])
-                        )
-                        send_telegram(f"Skonwertowano {amount_usdc:.2f} USDC → {executed_qty:.8f} {target}")
-                        return executed_qty, amount_usdc
                     else:
                         send_telegram(f"[PAPER] Symulacja konwersji {amount_usdc:.2f} USDC → {target}")
                         return amount_usdc / 100, amount_usdc
@@ -430,7 +425,7 @@ class Executor:
                     send_telegram(f"Kwota {invest:.2f} < minimalna {min_notional:.2f}, pomijam zakup {symbol}")
                     return
 
-                quote_qty = floor_to_step(invest, step)
+                quote_qty = invest
                 
                 if quote_qty <= 0:
                     send_telegram(f"Ilość po zaokrągleniu = 0, pomijam zakup {symbol}")
@@ -452,16 +447,20 @@ class Executor:
         while True:
             item = self.q.get()
 
-            # oczekujemy (priority, sig)
-            if not isinstance(item, tuple) or len(item) != 2:
-                print("Kolejka dostała zły format:", item)
+            if not isinstance(item, tuple):
+                print("Kolejka dostała zły format (nie tuple):", item)
                 continue
 
-            priority, sig = item
+            if len(item) == 2:
+                priority, sig = item
+            elif len(item) == 3:
+                priority, _, sig = item
+            else:
+                print("Kolejka dostała zły format (tuple len!=2/3):", item)
+                continue
 
-            # sig powinien być dict z kluczami symbol, price
             if not isinstance(sig, dict):
-                print("Niepoprawny sygnał w kolejce:", sig)
+                print("Niepoprawny sygnał w kolejce (sig nie dict):", sig)
                 continue
 
             try:
@@ -633,7 +632,7 @@ class WS:
 
 # === MAIN ===
 if __name__ == "__main__":
-    print("Start BBOT 6.3")
+    print("Start BBOT 6.4")
     db = DB()
     exe = Executor(db)
     strat = Strategy(exe)
