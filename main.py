@@ -318,26 +318,25 @@ class Executor:
                         )
 
                         # jeśli chcesz – możesz zaokrąglić executed_qty do step_size i użyć tego do DB
-                        step = self.symbol_filters.get(pair, {}).get("step_size", 0.000001)
-                        executed_qty = floor_to_step(executed_qty, step)
+                        step = self.symbol_filters.get(pair, {}).get("step_size", None)
+                        if step:
+                            executed_qty = floor_to_step(executed_qty, step)
 
                         send_telegram(f"Skonwertowano {quote_amount:.2f} USDC → {executed_qty:.8f} {target}")
                         return executed_qty, quote_amount
-                    else:
-                        send_telegram(f"[PAPER] Symulacja konwersji {amount_usdc:.2f} USDC → {target}")
-                        return amount_usdc / 100, amount_usdc
-                except Exception as e:
-                    last_exc = e
-                    wait = backoff * (2 ** (i - 1))
-                    print(f"[convert retry] {pair} error: {e} — retry {i}/{attempts} after {wait:.1f}s")
-                    time.sleep(wait)
+                  
+                    except Exception as e:
+                        last_exc = e
+                        wait = backoff * (2 ** (i - 1))
+                        print(f"[convert retry] {pair} error: {e} — retry {i}/{attempts} after {wait:.1f}s")
+                        time.sleep(wait)
 
-            send_telegram(f"Błąd konwersji {pair}: {last_exc}")
-            return 0.0, 0.0
+                send_telegram(f"Błąd konwersji {pair}: {last_exc}")
+                return 0.0, 0.0
 
-        except Exception as e:
-            send_telegram(f"Wyjątek konwersji USDC→{target}: {e}")
-            return 0.0, 0.0
+            except Exception as e:
+                send_telegram(f"Wyjątek konwersji USDC→{target}: {e}")
+                return 0.0, 0.0
 
     # === SPRZEDAŻ I KUPNO ===
     def sell_all_position(self, symbol):
@@ -367,20 +366,29 @@ class Executor:
             info = self.symbol_filters.get(symbol, {})
             step = info.get("step_size", 0.000001)
             qty_to_sell = floor_to_step(qty, step)
-            if qty_to_sell <= 0:
-                send_telegram("Ilość po zaokrągleniu = 0, pomijam.")
+
+            if self.paper:
+                send_telegram(f"[PAPER] Sprzedano {qty_to_sell:.8f} {base}")
+                self.db.close_position(symbol)
                 return
 
             order = self.client.order_market_sell(symbol=symbol, quantity=str(qty_to_sell))
             avg_price = safe_float(order["fills"][0]["price"]) if order.get("fills") else 0.0
             send_telegram(f"Sprzedano {qty_to_sell:.8f} {base} @ {avg_price}")
             self.db.close_position(symbol)
+
         except Exception as e:
             send_telegram(f"Błąd sprzedaży {symbol}: {e}")
 
     def _buy(self, symbol, price):
-        if self.db.has_open_position(symbol) or symbol in self.active_symbols:
+        if self.db.has_open_position(symbol):
+            send_telegram(f"Pomijam {symbol} — pozycja już istnieje.")
             return
+
+        if symbol in self.active_symbols:
+            send_telegram(f"Pomijam {symbol} — trade już trwa.")
+            return
+
         if time.time() - self.last_trade_ts.get(symbol, 0) < CFG["TRADE_COOLDOWN_SECONDS"]:
             return
 
@@ -390,7 +398,6 @@ class Executor:
             return
 
         info = self.symbol_filters.get(symbol, {})
-        step = info.get("step_size", 0.000001)
         min_notional = CFG["MIN_NOTIONALS"].get(quote, CFG["MIN_NOTIONAL_DEFAULT"])
         balance = self._get_balance(quote)
 
@@ -407,23 +414,8 @@ class Executor:
             invest = balance * CFG["BUY_ALLOCATION_PERCENT"]
 
         if invest < min_notional:
+            send_telegram(f"Kwota {invest:.6f} < minimalna {min_notional:.2f}, pomijam zakup {symbol}")
             return
-
-        self.active_symbols.add(symbol)
-        try:
-            if self.paper:
-                qty = quote_qty / price
-                self.db.insert_pos(symbol, qty, price)
-                send_telegram(f"[PAPER] KUPNO {symbol}: {qty:.8f} @ {price:.4f}")
-            else:
-                # sprawdź filtry
-                info = self.symbol_filters.get(symbol, {})
-                step = info.get("step_size", 0.000001)
-                min_notional = info.get("min_notional", 5.0)
-
-                if invest < min_notional:
-                    send_telegram(f"Kwota {invest:.2f} < minimalna {min_notional:.2f}, pomijam zakup {symbol}")
-                    return
 
                 quote_qty = invest
                 
@@ -632,7 +624,7 @@ class WS:
 
 # === MAIN ===
 if __name__ == "__main__":
-    print("Start BBOT 6.4")
+    print("Start BBOT 6.5")
     db = DB()
     exe = Executor(db)
     strat = Strategy(exe)
