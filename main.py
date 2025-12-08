@@ -325,7 +325,7 @@ class Executor:
                         send_telegram(f"Skonwertowano {quote_amount:.2f} USDC → {executed_qty:.8f} {target}")
                         return executed_qty, quote_amount
                   
-                    except Exception as e:
+                     except Exception as e:
                         last_exc = e
                         wait = backoff * (2 ** (i - 1))
                         print(f"[convert retry] {pair} error: {e} — retry {i}/{attempts} after {wait:.1f}s")
@@ -624,7 +624,7 @@ class WS:
 
 # === MAIN ===
 if __name__ == "__main__":
-    print("Start BBOT 6.5")
+    print("Start BBOT 6.6")
     db = DB()
     exe = Executor(db)
     strat = Strategy(exe)
