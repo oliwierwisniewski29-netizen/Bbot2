@@ -324,19 +324,20 @@ class Executor:
 
                         send_telegram(f"Skonwertowano {quote_amount:.2f} USDC → {executed_qty:.8f} {target}")
                         return executed_qty, quote_amount
-                  
-                     except Exception as e:
-                        last_exc = e
-                        wait = backoff * (2 ** (i - 1))
-                        print(f"[convert retry] {pair} error: {e} — retry {i}/{attempts} after {wait:.1f}s")
-                        time.sleep(wait)
+                        
+                except SomeSpecificException as e:  # np. błąd związany z Binance API
+                    send_telegram(f"Wyjątek konwersji USDC→{target}: {e}")
+                    return 0.0, 0.0
 
+                except Exception as e:  # catch-all dla pozostałych wyjątków
+                    last_exc = e
+                    wait = backoff * (2 ** (i - 1))
+                    print(f"[convert retry] {pair} error: {e} — retry {i}/{attempts} after {wait:.1f}s")
+                    time.sleep(wait)
+
+            if last_exc:
                 send_telegram(f"Błąd konwersji {pair}: {last_exc}")
-                return 0.0, 0.0
-
-            except Exception as e:
-                send_telegram(f"Wyjątek konwersji USDC→{target}: {e}")
-                return 0.0, 0.0
+            return 0.0, 0.0
 
     # === SPRZEDAŻ I KUPNO ===
     def sell_all_position(self, symbol):
@@ -624,7 +625,7 @@ class WS:
 
 # === MAIN ===
 if __name__ == "__main__":
-    print("Start BBOT 6.6")
+    print("Start BBOT 6.7")
     db = DB()
     exe = Executor(db)
     strat = Strategy(exe)
