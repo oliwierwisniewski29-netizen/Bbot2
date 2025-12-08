@@ -417,22 +417,20 @@ class Executor:
             send_telegram(f"Kwota {invest:.6f} < minimalna {min_notional:.2f}, pomijam zakup {symbol}")
             return
 
+        quote_qty = invest
+        if quote_qty <= 0:
+            send_telegram(f"Ilość po zaokrągleniu = 0, pomijam zakup {symbol}")
+            return
+
+        order = None
         try:
-            quote_qty = invest
-
-            if quote_qty <= 0:
-                send_telegram(f"Ilość po zaokrągleniu = 0, pomijam zakup {symbol}")
-                return
-
             order = self.client.order_market_buy(symbol=symbol, quoteOrderQty=str(quote_qty))
             qty = safe_float(order.get("executedQty"))
             avg = safe_float(order["fills"][0]["price"]) if order.get("fills") else price
             self.db.insert_pos(symbol, qty, avg)
             send_telegram(f"KUPNO {symbol}: {qty:.8f} @ {avg:.4f}")
-
         except Exception as e:
             send_telegram(f"Błąd kupna {symbol}: {e}")
-
         finally:
             self.last_trade_ts[symbol] = time.time()
             self.active_symbols.discard(symbol)
@@ -626,7 +624,7 @@ class WS:
 
 # === MAIN ===
 if __name__ == "__main__":
-    print("Start BBOT 7.0")
+    print("Start BBOT 7.1")
     db = DB()
     exe = Executor(db)
     strat = Strategy(exe)
