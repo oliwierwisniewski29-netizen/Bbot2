@@ -381,6 +381,7 @@ class Executor:
         except Exception as e:
             send_telegram(f"Błąd sprzedaży {symbol}: {e}")
 
+# === KUPNO ===
     def _buy(self, symbol, price):
         if self.db.has_open_position(symbol):
             send_telegram(f"Pomijam {symbol} — pozycja już istnieje.")
@@ -402,13 +403,11 @@ class Executor:
         min_notional = CFG["MIN_NOTIONALS"].get(quote, CFG["MIN_NOTIONAL_DEFAULT"])
         balance = self._get_balance(quote)
 
-        # jeśli mało quote, a nie USDC → konwertuj z USDC
         if balance < min_notional and quote != "USDC":
             send_telegram(f"Mało {quote}, konwertuję z USDC...")
             converted_qty, _ = self.convert_from_usdc(quote, CFG["CONVERT_FROM_USDC_PERCENT"])
-            balance += converted_qty  # dodajemy skonwertowaną ilość do dostępnego salda
-
-        # === NOWA LOGIKA: osobny procent dla par z USDC ===
+            balance += converted_qty
+    
         if quote == "USDC":
             invest = balance * CFG.get("BUY_USDC_PERCENT", CFG["BUY_ALLOCATION_PERCENT"])
         else:
@@ -417,10 +416,10 @@ class Executor:
         if invest < min_notional:
             send_telegram(f"Kwota {invest:.6f} < minimalna {min_notional:.2f}, pomijam zakup {symbol}")
             return
- 
+
         try:
             quote_qty = invest
-                
+
             if quote_qty <= 0:
                 send_telegram(f"Ilość po zaokrągleniu = 0, pomijam zakup {symbol}")
                 return
@@ -627,7 +626,7 @@ class WS:
 
 # === MAIN ===
 if __name__ == "__main__":
-    print("Start BBOT 6.9")
+    print("Start BBOT 7.0")
     db = DB()
     exe = Executor(db)
     strat = Strategy(exe)
