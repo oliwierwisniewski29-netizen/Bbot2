@@ -34,8 +34,8 @@ CFG = {
     "WINDOW_SECONDS": 5,
     "PCT_THRESHOLD": 30.0,
     "BUY_ALLOCATION_PERCENT": 1.0,
-    "BUY_USDC_PERCENT": 0.20,
-    "CONVERT_FROM_USDC_PERCENT": 0.20,
+    "BUY_USDC_PERCENT": 0.30,
+    "CONVERT_FROM_USDC_PERCENT": 0.30,
     "TP_PERCENT": 7.0,
     "MAX_CONCURRENT_TRADES": 5,
     "PAPER_TRADING": False,
@@ -619,7 +619,7 @@ class WS:
 
 # === MAIN ===
 if __name__ == "__main__":
-    print("Start BBOT 7.2")
+    print("Start BBOT 7.3")
     db = DB()
     exe = Executor(db)
     strat = Strategy(exe)
