@@ -408,6 +408,7 @@ class Executor:
         balance = self._get_balance(quote)
 
         converted_qty = 0.0
+        did_convert = False
 
         if balance < min_notional and quote != "USDC":
             send_telegram(f"Mało {quote}, konwertuję z USDC...")
@@ -415,18 +416,19 @@ class Executor:
             if converted_qty <= 0:
                 send_telegram("Konwersja nie dała środków, przerywam zakup")
                 return
+            did_convert = True
 
         #  NIE DODAJEMY DO ZMIENNEJ „NA PAŁĘ”
-        balance = 0.0
-        for attempt in range(3):
-            balance = self.wait_for_balance(quote, min_notional, timeout=3)
-            if balance >= min_notional:
-                break
-            time.sleep(1)
+        if did_convert:
+            for attempt in range(3):
+                balance = self.wait_for_balance(quote, min_notional, timeout=3)
+                if balance >= min_notional:
+                    break
+                time.sleep(1)
 
-        if balance < min_notional:
-            send_telegram(f"{quote} nadal niedostępne po konwersji po 3 próbach, przerywam")
-            return
+            if balance < min_notional:
+                send_telegram(f"{quote} nadal niedostępne po konwersji po 3 próbach, przerywam")
+                return
   
         if quote == "USDC":
             invest = balance * CFG.get("BUY_USDC_PERCENT", CFG["BUY_ALLOCATION_PERCENT"])
@@ -644,7 +646,7 @@ class WS:
 
 # === MAIN ===
 if __name__ == "__main__":
-    print("Start BBOT 7.4")
+    print("Start BBOT 7.5")
     db = DB()
     exe = Executor(db)
     strat = Strategy(exe)
