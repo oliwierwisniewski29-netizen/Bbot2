@@ -465,13 +465,16 @@ class Executor:
                 send_telegram(f"Ilość po zaokrągleniu = 0, pomijam zakup {symbol}")
                 return
 
-            order = None
-            try:
-                order = self.client.order_market_buy(symbol=symbol, quoteOrderQty=str(quote_qty))
-                qty = safe_float(order.get("executedQty"))
-                avg = safe_float(order["fills"][0]["price"]) if order.get("fills") else price
-                self.db.insert_pos(symbol, qty, avg)
-                send_telegram(f"KUPNO {symbol}: {qty:.8f} @ {avg:.4f}")
+            order = self.client.order_market_buy(
+                symbol=symbol,
+                quoteOrderQty=str(quote_qty)
+            )
+
+            qty = safe_float(order.get("executedQty"))
+            avg = safe_float(order["fills"][0]["price"]) if order.get("fills") else price
+
+            self.db.insert_pos(symbol, qty, avg)
+            send_telegram(f"KUPNO {symbol}: {qty:.8f} @ {avg:.4f}")
 
         except Exception as e:
             send_telegram(f"Błąd kupna {symbol}: {e}")
@@ -669,7 +672,7 @@ class WS:
 
 # === MAIN ===
 if __name__ == "__main__":
-    print("Start BBOT 7.9")
+    print("Start BBOT 8.0")
     db = DB()
     exe = Executor(db)
     strat = Strategy(exe)
