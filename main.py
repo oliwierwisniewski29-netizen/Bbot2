@@ -661,12 +661,12 @@ class WS:
               ws.run_forever()
 
           except Exception as e:
-              print("Exception in WS look:", e)s
+              print("Exception in WS look:", e)
               time.sleep(3)
 
 # === MAIN ===
 if __name__ == "__main__":
-    print("Start BBOT 7.7")
+    print("Start BBOT 7.8")
     db = DB()
     exe = Executor(db)
     strat = Strategy(exe)
