@@ -95,6 +95,10 @@ def send_telegram(text):
         except Exception as e:
             print(f"Telegram error: {e}")
 
+def floor_to_tick(value, tick):
+    v = Decimal(str(value))
+    t = Decimal(str(tick))
+    return float((v // t) * t)
 
 def floor_to_step(qty, step):
     """Zaokrąglenie w dół do kroku zgodnego z Binance, bez błędów precyzji."""
@@ -201,30 +205,42 @@ class Executor:
             info = self._api_get_exchange_info()
 
             for s in info["symbols"]:
-                symbol = s["symbol"]
+                symbol = s["symbol"].upper()
 
-                sym_u = symbol.strip().upper()
-                if sym_u.endswith("TRY"):
+                if symbol.endswith("TRY"):
                     continue
 
                 min_notional = CFG["MIN_NOTIONAL_DEFAULT"]
-                step_size = 0.000001
+                lot_step = None
+                tick_size = None
+                min_qty = None
 
                 for f in s.get("filters", []):
                     if f["filterType"] == "MIN_NOTIONAL":
                         min_notional = safe_float(f.get("minNotional", min_notional))
-                    if f["filterType"] == "LOT_SIZE":
-                        step_size = safe_float(f.get("stepSize", step_size))
+
+                    elif f["filterType"] == "LOT_SIZE":
+                        lot_step = safe_float(f.get("stepSize"))
+                        min_qty = safe_float(f.get("minQty"))
+
+                    elif f["filterType"] == "PRICE_FILTER":
+                        tick_size = safe_float(f.get("tickSize"))
+
+                if not tick_size:
+                    continue  # bez ticka ten symbol jest bezużyteczny
 
                 self.symbol_filters[symbol] = {
                     "min_notional": min_notional,
-                    "step_size": step_size
+                    "lot_step": lot_step,
+                    "tick_size": tick_size,
+                    "min_qty": min_qty
                 }
- 
+
             print(f"Załadowano {len(self.symbol_filters)} filtrów")
 
         except Exception as e:
             print("Błąd filtrów:", e)
+
 
     # === BALANSE ===
     def _get_balance(self, asset):
@@ -303,20 +319,17 @@ class Executor:
 
         for i in range(1, attempts + 1):
             try:
-                if not self.paper:
-                    # Nie zaokrąglamy quoteOrderQty wg step_size (step dotyczy quantity)
-                    # Round quote amount to 2 decimals to avoid tiny float issues
-                    quote_amount = round(amount_usdc, 2)
+                if not self.paper:  
                     order = self.client.order_market_buy(
                     symbol=pair,
-                    quoteOrderQty=str(quote_amount)
+                    quoteOrderQty=str(amount_usdc)
                     )
                     executed_qty = safe_float(order.get("executedQty")) or sum(
                     safe_float(f.get("qty", 0)) for f in order.get('fills', [])
                     )
 
                     # jeśli chcesz – możesz zaokrąglić executed_qty do step_size i użyć tego do DB
-                    step = self.symbol_filters.get(pair, {}).get("step_size", None)
+                    step = self.symbol_filters.get(pair, {}).get("lot_step", None)
                     if step:
                         executed_qty = floor_to_step(executed_qty, step)
 
@@ -369,7 +382,7 @@ class Executor:
                 return
 
             info = self.symbol_filters.get(symbol, {})
-            step = info.get("step_size", 0.000001)
+            step = info.get("lot_step", 0.000001)
             qty_to_sell = floor_to_step(qty, step)
 
             if self.paper:
@@ -398,13 +411,15 @@ class Executor:
         if time.time() - self.last_trade_ts.get(symbol, 0) < CFG["TRADE_COOLDOWN_SECONDS"]:
             return
 
+        self.active_symbols.add(symbol)
+
         quote = next((q for q in CFG["MIN_NOTIONALS"].keys() if symbol.endswith(q)), None)
         if not quote:
             print(f"Nie rozpoznano quote: {symbol}")
             return
 
         info = self.symbol_filters.get(symbol, {})
-        min_notional = CFG["MIN_NOTIONALS"].get(quote, CFG["MIN_NOTIONAL_DEFAULT"])
+        min_notional = info.get("min_notional", CFG["MIN_NOTIONAL_DEFAULT"])
         balance = self._get_balance(quote)
 
         converted_qty = 0.0
@@ -439,7 +454,12 @@ class Executor:
             send_telegram(f"Kwota {invest:.6f} < minimalna {min_notional:.2f}, pomijam zakup {symbol}")
             return
 
-        quote_qty = invest
+        info = self.symbol_filters.get(symbol, {})
+        tick = info.get("tick_size", 0.01)
+
+        # 0.999 = bufor, żeby nie przekroczyć salda przez fee / float
+        quote_qty = floor_to_tick(invest * 0.999, tick)
+
         if quote_qty <= 0:
             send_telegram(f"Ilość po zaokrągleniu = 0, pomijam zakup {symbol}")
             return
@@ -641,12 +661,12 @@ class WS:
               ws.run_forever()
 
           except Exception as e:
-              print("Exception in WS look:", e)
+              print("Exception in WS look:", e)s
               time.sleep(3)
 
 # === MAIN ===
 if __name__ == "__main__":
-    print("Start BBOT 7.5")
+    print("Start BBOT 7.7")
     db = DB()
     exe = Executor(db)
     strat = Strategy(exe)
