@@ -333,8 +333,8 @@ class Executor:
                     if step:
                         executed_qty = floor_to_step(executed_qty, step)
 
-                    send_telegram(f"Skonwertowano {quote_amount:.2f} USDC → {executed_qty:.8f} {target}")
-                    return executed_qty, quote_amount
+                    send_telegram(f"Skonwertowano {amount_usdc:.2f} USDC → {executed_qty:.8f} {target}")
+                    return executed_qty, amount_usdc
                     
             except Exception as e:
                 last_exc = e
@@ -345,7 +345,7 @@ class Executor:
 
         if last_exc:
             send_telegram(f"Błąd konwersji {pair}: {last_exc}")
-        return 0.0, 0.0\
+        return 0.0, 0.0
 
     def wait_for_balance(self, asset, min_amount, timeout=5):
         start = time.time()
@@ -412,67 +412,70 @@ class Executor:
             return
 
         self.active_symbols.add(symbol)
-
-        quote = next((q for q in CFG["MIN_NOTIONALS"].keys() if symbol.endswith(q)), None)
-        if not quote:
-            print(f"Nie rozpoznano quote: {symbol}")
-            return
-
-        info = self.symbol_filters.get(symbol, {})
-        min_notional = info.get("min_notional", CFG["MIN_NOTIONAL_DEFAULT"])
-        balance = self._get_balance(quote)
-
-        converted_qty = 0.0
-        did_convert = False
-
-        if balance < min_notional and quote != "USDC":
-            send_telegram(f"Mało {quote}, konwertuję z USDC...")
-            converted_qty, _ = self.convert_from_usdc(quote, CFG["CONVERT_FROM_USDC_PERCENT"])
-            if converted_qty <= 0:
-                send_telegram("Konwersja nie dała środków, przerywam zakup")
-                return
-            did_convert = True
-
-        #  NIE DODAJEMY DO ZMIENNEJ „NA PAŁĘ”
-        if did_convert:
-            for attempt in range(3):
-                balance = self.wait_for_balance(quote, min_notional, timeout=3)
-                if balance >= min_notional:
-                    break
-                time.sleep(1)
-
-            if balance < min_notional:
-                send_telegram(f"{quote} nadal niedostępne po konwersji po 3 próbach, przerywam")
-                return
-  
-        if quote == "USDC":
-            invest = balance * CFG.get("BUY_USDC_PERCENT", CFG["BUY_ALLOCATION_PERCENT"])
-        else:
-            invest = balance * CFG["BUY_ALLOCATION_PERCENT"]
-
-        if invest < min_notional:
-            send_telegram(f"Kwota {invest:.6f} < minimalna {min_notional:.2f}, pomijam zakup {symbol}")
-            return
-
-        info = self.symbol_filters.get(symbol, {})
-        tick = info.get("tick_size", 0.01)
-
-        # 0.999 = bufor, żeby nie przekroczyć salda przez fee / float
-        quote_qty = floor_to_tick(invest * 0.999, tick)
-
-        if quote_qty <= 0:
-            send_telegram(f"Ilość po zaokrągleniu = 0, pomijam zakup {symbol}")
-            return
-
-        order = None
+        
         try:
-            order = self.client.order_market_buy(symbol=symbol, quoteOrderQty=str(quote_qty))
-            qty = safe_float(order.get("executedQty"))
-            avg = safe_float(order["fills"][0]["price"]) if order.get("fills") else price
-            self.db.insert_pos(symbol, qty, avg)
-            send_telegram(f"KUPNO {symbol}: {qty:.8f} @ {avg:.4f}")
+            quote = next((q for q in CFG["MIN_NOTIONALS"].keys() if symbol.endswith(q)), None)
+            if not quote:
+                print(f"Nie rozpoznano quote: {symbol}")
+                return
+
+            info = self.symbol_filters.get(symbol, {})
+            min_notional = info.get("min_notional", CFG["MIN_NOTIONAL_DEFAULT"])
+            balance = self._get_balance(quote)
+
+            converted_qty = 0.0
+            did_convert = False
+
+            if balance < min_notional and quote != "USDC":
+                send_telegram(f"Mało {quote}, konwertuję z USDC...")
+                converted_qty, _ = self.convert_from_usdc(quote, CFG["CONVERT_FROM_USDC_PERCENT"])
+                if converted_qty <= 0:
+                    send_telegram("Konwersja nie dała środków, przerywam zakup")
+                    return
+                did_convert = True
+
+            #  NIE DODAJEMY DO ZMIENNEJ „NA PAŁĘ”
+            if did_convert:
+                for attempt in range(3):
+                    balance = self.wait_for_balance(quote, min_notional, timeout=3)
+                    if balance >= min_notional:
+                        break
+                    time.sleep(1)
+
+                if balance < min_notional:
+                    send_telegram(f"{quote} nadal niedostępne po konwersji po 3 próbach, przerywam")
+                    return
+  
+            if quote == "USDC":
+                invest = balance * CFG.get("BUY_USDC_PERCENT", CFG["BUY_ALLOCATION_PERCENT"])
+            else:
+                invest = balance * CFG["BUY_ALLOCATION_PERCENT"]
+
+            if invest < min_notional:
+                send_telegram(f"Kwota {invest:.6f} < minimalna {min_notional:.2f}, pomijam zakup {symbol}")
+                return
+
+            info = self.symbol_filters.get(symbol, {})
+            tick = info.get("tick_size", 0.01)
+
+            # 0.999 = bufor, żeby nie przekroczyć salda przez fee / float
+            quote_qty = floor_to_tick(invest * 0.999, tick)
+
+            if quote_qty <= 0:
+                send_telegram(f"Ilość po zaokrągleniu = 0, pomijam zakup {symbol}")
+                return
+
+            order = None
+            try:
+                order = self.client.order_market_buy(symbol=symbol, quoteOrderQty=str(quote_qty))
+                qty = safe_float(order.get("executedQty"))
+                avg = safe_float(order["fills"][0]["price"]) if order.get("fills") else price
+                self.db.insert_pos(symbol, qty, avg)
+                send_telegram(f"KUPNO {symbol}: {qty:.8f} @ {avg:.4f}")
+
         except Exception as e:
             send_telegram(f"Błąd kupna {symbol}: {e}")
+
         finally:
             self.last_trade_ts[symbol] = time.time()
             self.active_symbols.discard(symbol)
@@ -666,7 +669,7 @@ class WS:
 
 # === MAIN ===
 if __name__ == "__main__":
-    print("Start BBOT 7.8")
+    print("Start BBOT 7.9")
     db = DB()
     exe = Executor(db)
     strat = Strategy(exe)
