@@ -32,7 +32,7 @@ CFG = {
     "ALLOWED_CHAT_IDS": ["7684314138"],
 
     "WINDOW_SECONDS": 5,
-    "PCT_THRESHOLD": 30.0,
+    "PCT_THRESHOLD": 20.0,
     "BUY_ALLOCATION_PERCENT": 1.0,
     "BUY_USDC_PERCENT": 0.30,
     "CONVERT_FROM_USDC_PERCENT": 0.30,
@@ -672,7 +672,7 @@ class WS:
 
 # === MAIN ===
 if __name__ == "__main__":
-    print("Start BBOT 8.0")
+    print("Start BBOT 8.1")
     db = DB()
     exe = Executor(db)
     strat = Strategy(exe)
