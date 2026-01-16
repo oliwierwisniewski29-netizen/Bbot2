@@ -56,12 +56,8 @@ CFG = {
         "BRL": 10.0,
         "JPY": 100.0,
         "PLN": 25.0,
-        "ARS": 2000.0,
         "CZK": 200.0,
-        "MXN": 150.0,
         "RON": 20.0,
-        "UAH": 100.0,
-        "ZAR": 100.0
     },
 
     "MIN_NOTIONAL_DEFAULT": 5.0,
@@ -672,7 +668,7 @@ class WS:
 
 # === MAIN ===
 if __name__ == "__main__":
-    print("Start BBOT 8.1")
+    print("Start BBOT 8.2")
     db = DB()
     exe = Executor(db)
     strat = Strategy(exe)
