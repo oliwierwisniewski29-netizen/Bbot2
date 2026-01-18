@@ -106,6 +106,9 @@ def floor_to_step(qty, step):
     except:
         return qty
 
+def floor_quote(value, decimals=2):
+    q = Decimal(str(value))
+    return float(q.quantize(Decimal("1." + "0"*decimals), rounding=ROUND_DOWN))
 
 def retry_api(attempts=3, backoff=1.0, allowed_exceptions=(Exception,)):
     """
@@ -315,17 +318,19 @@ class Executor:
 
         for i in range(1, attempts + 1):
             try:
-                if not self.paper:  
+                if not self.paper:
+                    quote_qty = floor_quote(amount_usdc, 2)
+
                     order = self.client.order_market_buy(
-                    symbol=pair,
-                    quoteOrderQty=str(amount_usdc)
-                    )
-                    executed_qty = safe_float(order.get("executedQty")) or sum(
-                    safe_float(f.get("qty", 0)) for f in order.get('fills', [])
+                        symbol=pair,
+                        quoteOrderQty=str(quote_qty)
                     )
 
-                    # jeśli chcesz – możesz zaokrąglić executed_qty do step_size i użyć tego do DB
-                    step = self.symbol_filters.get(pair, {}).get("lot_step", None)
+                    executed_qty = safe_float(order.get("executedQty")) or sum(
+                        safe_float(f.get("qty", 0)) for f in order.get("fills", [])
+                    )
+
+                    step = self.symbol_filters.get(pair, {}).get("lot_step")
                     if step:
                         executed_qty = floor_to_step(executed_qty, step)
 
@@ -668,7 +673,7 @@ class WS:
 
 # === MAIN ===
 if __name__ == "__main__":
-    print("Start BBOT 8.3")
+    print("Start BBOT 8.4")
     db = DB()
     exe = Executor(db)
     strat = Strategy(exe)
