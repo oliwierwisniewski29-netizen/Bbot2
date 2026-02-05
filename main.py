@@ -433,7 +433,7 @@ class Executor:
                 if converted_qty <= 0:
                     send_telegram("Konwersja nie dała środków, przerywam zakup")
                     return
-                did_convert = True
+                balance = converted_qty
   
             if quote == "USDC":
                 invest = balance * CFG.get("BUY_USDC_PERCENT", CFG["BUY_ALLOCATION_PERCENT"])
@@ -661,7 +661,7 @@ class WS:
 
 # === MAIN ===
 if __name__ == "__main__":
-    print("Start BBOT 8.5")
+    print("Start BBOT 8.6")
     db = DB()
     exe = Executor(db)
     strat = Strategy(exe)
