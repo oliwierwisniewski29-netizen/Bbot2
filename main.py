@@ -214,14 +214,7 @@ class Executor:
                 if symbol in BAN_PAIRS:
                     continue
  
-                status = s.get("status")
-                if status != "TRADING":
-                    continue
-
-                if "SPOT" not in s.get("permissions", []):
-                    continue
-
-                if symbol.endswith("TRY"):
+                if s.get("status") != "TRADING":
                     continue
 
                 min_notional = CFG["MIN_NOTIONAL_DEFAULT"]
@@ -240,8 +233,8 @@ class Executor:
                     elif f["filterType"] == "PRICE_FILTER":
                         tick_size = safe_float(f.get("tickSize"))
 
-                if not tick_size:
-                    continue  # bez ticka ten symbol jest bezużyteczny
+                if tick_size is None:
+                    continue
 
                 self.symbol_filters[symbol] = {
                     "min_notional": min_notional,
@@ -698,7 +691,7 @@ class WS:
 
 # === MAIN ===
 if __name__ == "__main__":
-    print("Start BBOT 8.8")
+    print("Start BBOT 8.9")
     db = DB()
     exe = Executor(db)
     strat = Strategy(exe)
