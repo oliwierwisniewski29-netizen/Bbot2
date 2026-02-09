@@ -63,10 +63,14 @@ CFG = {
     "MIN_NOTIONAL_DEFAULT": 5.0,
     "MIN_VOLATILITY_PERCENT": 10.0,
     "MIN_CANDLE_COUNT": 7,
-    "VOLATILITY_LOOKBACK": 60
+    "VOLATILITY_LOOKBACK": 60,
+    "BAN_PAIRS": [
+        "CHESSUSDC",        
+    ]
 }
 
 # === POMOCNICZE ===
+BAN_PAIRS = set(p.upper() for p in CFG.get("BAN_PAIRS", []))
 
 def now_ts():
     return int(time.time())
@@ -189,6 +193,7 @@ class Executor:
         self.active_symbols = set()
 
         self._pq_counter = 0
+        self.msg_cache = {}
 
     # === API ===
     @retry_api()
@@ -205,6 +210,16 @@ class Executor:
 
             for s in info["symbols"]:
                 symbol = s["symbol"].upper()
+ 
+                if symbol in BAN_PAIRS:
+                    continue
+ 
+                status = s.get("status")
+                if status != "TRADING":
+                    continue
+
+                if "SPOT" not in s.get("permissions", []):
+                    continue
 
                 if symbol.endswith("TRY"):
                     continue
@@ -357,6 +372,14 @@ class Executor:
             time.sleep(0.3)
         return 0.0
 
+    def send_once(self, key, text, cooldown=300):
+        now = time.time()
+        last = self.msg_cache.get(key, 0)
+
+        if now - last >= cooldown:
+            send_telegram(text)
+            self.msg_cache[key] = now
+
     # === SPRZEDAŻ I KUPNO ===
     def sell_all_position(self, symbol):
         try:
@@ -402,11 +425,19 @@ class Executor:
 # === KUPNO ===
     def _buy(self, symbol, price):
         if self.db.has_open_position(symbol):
-            send_telegram(f"Pomijam {symbol} — pozycja już istnieje.")
+            self.send_once(
+                f"open_{symbol}",
+                f"⏸️ {symbol} pominięte — pozycja już istnieje.",
+                cooldown=600
+            )
             return
 
         if symbol in self.active_symbols:
-            send_telegram(f"Pomijam {symbol} — trade już trwa.")
+            self.send_once(
+                f"active_{symbol}",
+                f"⏳ {symbol} — trade w toku.",
+                cooldown=300
+            )
             return
 
         if time.time() - self.last_trade_ts.get(symbol, 0) < CFG["TRADE_COOLDOWN_SECONDS"]:
@@ -429,22 +460,24 @@ class Executor:
 
             if balance < min_notional and quote != "USDC":
                 send_telegram(f"Mało {quote}, konwertuję z USDC...")
-                self.convert_from_usdc(quote, CFG["CONVERT_FROM_USDC_PERCENT"])
-                did_convert = True
-   
-            if did_convert:
-                for attempt in range(5):
-                    balance = self._get_balance(quote)
-                    if balance >= min_notional:
-                        break
-                    time.sleep(1)
+                converted_qty, spent = self.convert_from_usdc(
+                    quote,
+                    CFG["CONVERT_FROM_USDC_PERCENT"]
+                )
 
-                if balance < min_notional:
-                    send_telegram(
-                        f"{quote} nadal < min_notional po konwersji "
-                        f"({balance:.8f} < {min_notional}) — przerywam zakup"
-                    )
+                if converted_qty > 0:
+                    did_convert = True
+                else:
+                    send_telegram(f"Konwersja USDC→{quote} nie dała środków – przerywam zakup")
                     return
+   
+            balance = self._get_balance(quote)
+            if balance < min_notional:
+                send_telegram(
+                    f"{quote} < min_notional po konwersji "
+                    f"({balance:.8f} < {min_notional}) — przerywam zakup"
+                )
+                return
 
             if quote == "USDC":
                 invest = balance * CFG.get("BUY_USDC_PERCENT", CFG["BUY_ALLOCATION_PERCENT"])
@@ -562,13 +595,6 @@ class Strategy:
 
         pct = (p - old) / old * 100
 
-        if pct <= -CFG["PCT_THRESHOLD"]:
-            self.executor.enqueue({
-                "symbol": s,
-                "price": p,
-                "pct": pct
-            })
-
         # sprawdzamy tylko potencjalne spadki
         if pct <= -abs(CFG["PCT_THRESHOLD"]):
 
@@ -672,7 +698,7 @@ class WS:
 
 # === MAIN ===
 if __name__ == "__main__":
-    print("Start BBOT 8.7")
+    print("Start BBOT 8.8")
     db = DB()
     exe = Executor(db)
     strat = Strategy(exe)
